@@ -1,0 +1,115 @@
+---
+name: pre-check
+version: 0.1.0
+description: |
+  Configurable auto-approve / safety gate for autonomous runs. A PreToolUse hook
+  evaluates every Bash command (and file edit) BEFORE it would prompt: routine dev
+  work is auto-approved, dangerous commands are blocked (you get the reason and can
+  go safer), and only genuinely ambiguous calls reach the user. Per-category
+  gate/passthrough toggles, a keyless Haiku veto, and a private decision cache.
+  Invoke this skill to MANAGE the gate (install/uninstall, turn on/off, gate or
+  ignore a tool category, add a category, calibrate against settings.json, view the
+  decision log, clear the cache) or to explain why a command was blocked.
+allowed-tools:
+  - Bash
+  - Read
+sensitive: true
+---
+
+# /pre-check — auto-approve / safety gate
+
+You are operating the **pre-check** gate. It is an always-on **PreToolUse hook** (it
+lives in `~/.claude/settings.json`, not in this skill), so it runs automatically on
+every tool call once installed. Invoking this skill does **not** enable it — it lets
+you *manage* it. Run `install` once; it then runs every session.
+
+## How the gate affects your tool calls (the 3 verdicts)
+
+Before a gated tool call runs, the gate returns one of:
+
+| Verdict | What happens to you | When |
+|---|---|---|
+| **allow** | The call runs with no user prompt. | Command matched the safe-allow list, or it's marginal + risk-scoped and handed to the Haiku veto. |
+| **deny** | The call is blocked; you receive the reason as tool feedback. | Matched a dangerous pattern (deny-list) or the Haiku veto rejected it. |
+| **ask** | The normal user permission prompt appears. | Sensitive (e.g. reading `.env`) or unrecognized + not risk-scoped. |
+
+**When you get a `deny`**, the reason string tells you the rule and a safer next step.
+Do NOT retry the same command. Either choose the safer alternative it suggests, or — if
+the user truly intended it — ask the user to approve it explicitly. A `deny` is the gate
+protecting the user; treat its reason as actionable guidance, not a transient error.
+
+Two cooperating hooks: a deterministic Node script (instant, free) and a keyless Haiku
+`type:"prompt"` veto that can only *tighten* (it vetoes risky marginal commands the
+script optimistically allowed). The deterministic deny-list + a tiny unbypassable
+`permissions.deny` backstop are the real safety floor; the LLM is a bonus net.
+
+## Managing the gate
+
+All commands run via Bash. `DIR` below is `~/.claude/skills/pre-check`.
+
+```bash
+# Install / remove (install merges hooks into settings.json; uninstall reverses it)
+node ~/.claude/skills/pre-check/bin/install.mjs
+node ~/.claude/skills/pre-check/bin/uninstall.mjs
+
+# Status, on/off (master switch — off => normal Claude Code prompting returns)
+node ~/.claude/skills/pre-check/bin/manage.mjs status
+node ~/.claude/skills/pre-check/bin/manage.mjs off
+node ~/.claude/skills/pre-check/bin/manage.mjs on
+
+# Gate or ignore a whole tool category (bash | edit | read | web | mcp)
+node ~/.claude/skills/pre-check/bin/manage.mjs set web gate
+node ~/.claude/skills/pre-check/bin/manage.mjs set bash passthrough
+
+# Turn the keyless Haiku veto on/off (off => marginal commands just prompt you)
+node ~/.claude/skills/pre-check/bin/manage.mjs llm off
+node ~/.claude/skills/pre-check/bin/manage.mjs llm on claude-haiku-4-5
+
+# Calibrate against your existing settings.json permissions (import allow as trusted,
+# mirror deny/ask, report counts). Run after install and after editing permissions.
+node ~/.claude/skills/pre-check/bin/manage.mjs sync
+
+# Inspect / maintain
+node ~/.claude/skills/pre-check/bin/manage.mjs logs 30     # tail the decision log
+node ~/.claude/skills/pre-check/bin/manage.mjs rules       # where to edit allow/deny
+node ~/.claude/skills/pre-check/bin/manage.mjs clear-cache
+```
+
+### Adding your own category (worked example)
+
+Categories map a **tool-name regex** to a mode. To auto-gate the Gmail MCP tools so
+sending/labelling mail is filtered like everything else:
+
+```bash
+node ~/.claude/skills/pre-check/bin/manage.mjs category add gmail "^mcp__claude_ai_Gmail__" gate
+# remove it again:
+node ~/.claude/skills/pre-check/bin/manage.mjs category remove gmail
+```
+
+Changing or adding a category automatically reconciles the `settings.json` hook matcher
+— no manual settings edits. Read-shaped MCP tools (`list/search/get/read/...`) auto-allow;
+write/`delete`-shaped ones ask; destructive ones deny.
+
+## Tuning the rules (no code changes)
+
+- **`~/.claude/precheck/config.json`** — per-category modes, `llm` on/off + model,
+  `riskyScope` (which commands trigger the Haiku veto), cache, sync settings. Self-documented.
+- **`~/.claude/precheck/rules.user.json`** — append `extraAllow` / `extraDeny` /
+  `extraSensitive` (`{id, re, note}`, `re` = JS regex), or `disabled: ["rule.id"]` to turn
+  off a default rule. Deep-merged over the shipped `rules/rules.default.json`.
+- **`~/.claude/precheck/rules.synced.json`** — generated by `sync`; do not hand-edit.
+
+When a user asks "why was X blocked?", run `manage.mjs logs` and/or read the matching
+rule's `note` in `rules/rules.default.json` (the `ruleId` is in both the deny reason and
+the log). When they ask to allow something the gate blocks, prefer adding a scoped
+`extraAllow` rule (or a `settings.json` allow + `sync`) over disabling a deny rule.
+
+## Safety properties (state these honestly if asked)
+
+- A hook `allow` never overrides a `settings.json` `deny` — the backstop (sudo, `rm -rf /`,
+  `curl|sh`, …) is unbypassable.
+- The gate fails to **ask**, never to **allow** (corrupt input/config/rules → ask).
+- The Haiku veto can only tighten (deny), never loosen — and it isn't the floor (the
+  deterministic deny-list + backstop are).
+- Fully reversible: `uninstall` removes only what `install` added (tracked in
+  `~/.claude/precheck/state/install.json`); deleting `~/.claude/precheck` wipes all state.

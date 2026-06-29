@@ -1,0 +1,78 @@
+{
+  // ───────────────────────────────────────────────────────────────────────────
+  //  pre-check config.  Edit freely (// and /* */ comments and trailing commas
+  //  are tolerated).  `/pre-check status` shows the live values; the management
+  //  commands (set / category / llm / on / off / sync) edit this file for you.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // Master switch. false => the gate emits no opinion and you get normal Claude
+  // Code prompting. Toggle with `/pre-check on` | `off`.
+  "enabled": true,
+
+  // CATEGORIES — the holistic knob. Each entry maps a tool-name regex to a mode:
+  //   "gate"        = pre-check evaluates the call (auto allow / deny / ask)
+  //   "passthrough" = pre-check stays silent; normal Claude Code prompt applies
+  // Add your own, e.g.  "gmail": { "match": "^mcp__claude_ai_Gmail__", "mode": "gate" }
+  // After any change run `/pre-check` install/sync so the settings.json hook
+  // matcher is reconciled (manage.mjs does this automatically).
+  "categories": {
+    "bash": { "match": "^Bash$",                      "mode": "gate" },
+    "edit": { "match": "^(Edit|Write|NotebookEdit)$",  "mode": "gate" },
+    "read": { "match": "^(Read|Glob|Grep)$",           "mode": "passthrough" },
+    "web":  { "match": "^(WebFetch|WebSearch)$",        "mode": "passthrough" },
+    "mcp":  { "match": "^mcp__",                        "mode": "passthrough" }
+  },
+
+  // Keyless Haiku veto net (a type:"prompt" hook). When on, a marginal Bash
+  // command that matches `riskyScope` is optimistically allowed and Haiku may
+  // veto it. When off, marginal commands fall back to a normal prompt (ask).
+  "llm": { "enabled": true, "model": "claude-haiku-4-5", "timeoutSeconds": 25 },
+
+  // Which Bash commands are "risky" enough to (a) wire into the prompt hook's
+  // `if:` scope and (b) be eligible for optimistic-allow-with-veto when marginal.
+  // Single source of truth: install.mjs joins these with `|` for the hook `if:`,
+  // and precheck.mjs converts each glob to a regex to gate marginal commands.
+  // Glob syntax (Claude Code `Bash(...)` style): `*` = any chars.
+  "riskyScope": [
+    "Bash(npx *)", "Bash(*curl*)", "Bash(*wget*)", "Bash(sudo *)",
+    "Bash(*rm -rf*)", "Bash(*rm -r *)", "Bash(git push*)", "Bash(*kubectl*)",
+    "Bash(*terraform*)", "Bash(*aws *)", "Bash(*gcloud*)", "Bash(*docker *)",
+    "Bash(* nc *)", "Bash(*eval *)", "Bash(*base64 *)", "Bash(pip install*)",
+    "Bash(pip3 install*)", "Bash(*psql*)", "Bash(*mysql*)", "Bash(*mongo*)",
+    "Bash(*DROP *)", "Bash(*DELETE FROM*)", "Bash(*chmod *)", "Bash(*chown *)",
+    "Bash(*ssh *)", "Bash(*scp *)", "Bash(*> /*)", "Bash(bash *)", "Bash(sh *)",
+    "Bash(zsh *)", "Bash(*| sh*)", "Bash(*|sh*)", "Bash(make install*)",
+    "Bash(go install*)", "Bash(*chmod 777*)"
+  ],
+
+  // Private decision cache for DETERMINISTIC verdicts (deny/ask/allow from rules).
+  // Marginal-via-LLM verdicts are never cached (the veto runs each time).
+  "cache": { "enabled": true, "ttlSeconds": 86400, "maxEntries": 5000, "scope": "global" },
+
+  // How the project root (the Edit/Write allow boundary) is found: walk up from
+  // cwd until a marker dir/file is seen; else use cwd.
+  "projectRoot": {
+    "markers": [".git", "package.json", "pyproject.toml", "go.mod", "Cargo.toml", ".precheck-context.yaml"],
+    "fallback": "cwd"
+  },
+
+  // Calibration with Claude Code's own permissions (`/pre-check sync`).
+  //   importAllow       = treat settings.json permissions.allow Bash patterns as
+  //                       SAFE-ALLOW so the gate never denies what you trust.
+  //   mirrorDenyAsk      = mirror permissions.deny/ask for consistent verdicts.
+  //   promoteToSettings  = (opt-in) allow `sync` to append cached approvals into
+  //                       settings.json permissions.allow. Default off.
+  "syncSettings": { "importAllow": true, "mirrorDenyAsk": true, "promoteToSettings": false },
+
+  // What to do when a verdict is ambiguous. These are intentionally "ask" / never
+  // "allow" — pre-check fails toward the human, never toward silent approval.
+  "decisionPolicy": {
+    "marginalWhenLlmOn": "allow",
+    "marginalWhenLlmOff": "ask",
+    "onParseError": "ask",
+    "onConfigError": "ask"
+  },
+
+  // Audit log. logCommandText=false stores only a hash, not the command text.
+  "logging": { "enabled": true, "logCommandText": true, "maxSnippet": 200 }
+}

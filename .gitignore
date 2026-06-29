@@ -1,0 +1,9 @@
+# User state lives in ~/.claude/precheck/, never inside this repo. These patterns are
+# just belt-and-suspenders in case anything local lands here.
+*.log
+*.bak
+settings.json.precheck.bak
+.DS_Store
+Thumbs.db
+node_modules/
+.tmp

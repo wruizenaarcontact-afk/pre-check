@@ -1,0 +1,32 @@
+# Optional per-project tuning. Drop this file at your project root (next to .git).
+# pre-check reads it automatically (a .precheck-context.json with the same keys also works).
+#
+# Patterns in extraAllow/extraDeny/extraSensitive are Claude-Code-style Bash globs
+# ("*" = any chars), matched against each sub-command. extraAllow is TRUSTED — it wins
+# over the gate's deny rules (the settings.json deny-backstop still applies at the
+# permission layer). Use trailing "*" for prefix matches.
+
+intent: "Next.js + Supabase gardening app. Local dev, tests, and DB migrations only."
+
+# Human/agent-readable posture (documentation; the Haiku veto cannot read this file).
+allowedIntents:
+  - "run the dev server, tests, lint, typecheck"
+  - "supabase db push/execute against the linked dev project"
+  - "edit files under src/ and supabase/migrations/"
+forbiddenIntents:
+  - "any production deploy"
+  - "deleting Supabase projects or tables"
+  - "force-push to main/master"
+
+# Deterministic per-project rules (these DO take effect in precheck.mjs):
+extraAllow:
+  - "supabase db push*"
+  - "supabase db execute --file supabase/*"
+  - "drizzle-kit *"
+
+extraDeny:
+  - "supabase projects delete *"
+  - "gh repo delete *"
+
+extraSensitive:
+  - "supabase db reset*"

@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "_comment": "Pre-check default rule library. Each rule = {id, re, note}. 're' is a JavaScript regex source (case-insensitive). 'note' is shown to the agent/user to explain a decision. Override or disable any rule from ~/.claude/precheck/rules.user.json (an entry with the same id and \"disabled\": true removes a default rule; entries in extraDeny/extraAllow/extraSensitive are appended).",
+
+  "safeBuildDirs": [
+    "node_modules", ".next", "dist", "build", "out", "coverage",
+    "__pycache__", ".cache", ".turbo", ".pytest_cache", ".mypy_cache",
+    ".svelte-kit", ".nuxt", ".parcel-cache", ".vite", "target/debug", ".gradle", ".dart_tool"
+  ],
+
+  "denyPipeline": [
+    { "id": "pipe.curl-to-shell", "re": "\\b(curl|wget|fetch)\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z|da|fi|c)?sh\\b", "note": "pipes a network download straight into a shell (remote code execution)" },
+    { "id": "pipe.url-to-shell", "re": "https?://[^|]*\\|\\s*(sudo\\s+)?(ba|z|da)?sh\\b", "note": "pipes a URL's contents into a shell (remote code execution)" },
+    { "id": "pipe.base64-to-shell", "re": "base64\\s+-{1,2}d(ecode)?\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z|da)?sh\\b", "note": "decodes base64 and pipes it into a shell (obfuscated code execution)" },
+    { "id": "pipe.nc-exfil", "re": "\\|\\s*nc\\b|\\bnc(at)?\\b[^|;&]*\\s-\\w*e\\b", "note": "netcat reverse shell / data exfiltration" },
+    { "id": "pipe.eval-network", "re": "\\beval\\b[^;]*\\$\\(\\s*(curl|wget|fetch|http)", "note": "eval of network output (remote code execution)" }
+  ],
+
+  "denyBash": [
+    { "id": "sys.sudo", "re": "(^|[\\s|;&])sudo\\b", "note": "runs with elevated privileges" },
+    { "id": "rm.no-preserve-root", "re": "--no-preserve-root", "note": "removes the safety guard that stops rm from deleting /" },
+    { "id": "disk.mkfs", "re": "\\bmkfs(\\.\\w+)?\\b", "note": "formats a filesystem (destroys all data on the target)" },
+    { "id": "disk.dd-device", "re": "\\bdd\\b[^\\n]*\\bof=/dev/", "note": "writes raw bytes to a device (can wipe a disk)" },
+    { "id": "sys.forkbomb", "re": ":\\s*\\(\\s*\\)\\s*\\{[^}]*:\\s*\\|\\s*:[^}]*\\}", "note": "fork bomb (exhausts system resources)" },
+    { "id": "sys.shutdown", "re": "\\b(shutdown|reboot|halt|poweroff|init\\s+0|init\\s+6)\\b", "note": "powers off or reboots the machine" },
+    { "id": "perm.chmod-777-root", "re": "\\bchmod\\s+-?R?\\s*0?777\\s+/(\\s|$)", "note": "makes the root filesystem world-writable" },
+    { "id": "git.push-force", "re": "\\bgit\\s+push\\b[^|;&]*(--force(?!-with-lease)\\b|\\s-f\\b)", "note": "force-push rewrites remote history; collaborators can lose work (use --force-with-lease)" },
+    { "id": "git.clean-fdx", "re": "\\bgit\\s+clean\\b[^|;&]*-\\S*(fd|df)\\S*", "note": "git clean -fd/-fdx permanently deletes untracked (and ignored) files" },
+    { "id": "git.reset-hard-remote", "re": "\\bgit\\s+reset\\s+--hard\\s+(origin/|upstream/|HEAD~([2-9]|\\d{2,}))", "note": "discards many local commits irreversibly" },
+    { "id": "git.branch-force-delete", "re": "\\bgit\\s+branch\\s+-D\\b", "note": "force-deletes a branch (may lose unmerged commits)" },
+    { "id": "k8s.delete", "re": "\\bkubectl\\b[^|;&]*\\bdelete\\b", "note": "deletes Kubernetes resources (may affect a live cluster)" },
+    { "id": "k8s.helm-uninstall", "re": "\\bhelm\\s+(uninstall|delete)\\b", "note": "tears down a Helm release" },
+    { "id": "iac.terraform-destroy", "re": "\\bterraform\\s+destroy\\b", "note": "destroys provisioned infrastructure" },
+    { "id": "cloud.aws-destructive", "re": "\\baws\\s+\\S+\\s+(delete|terminate|deregister|remove|purge)-|\\baws\\s+s3\\s+(rb|rm)\\b", "note": "deletes/terminates AWS resources" },
+    { "id": "cloud.gcloud-delete", "re": "\\bgcloud\\s+\\S+[^|;&]*\\bdelete\\b", "note": "deletes a Google Cloud resource" },
+    { "id": "vcs.gh-delete", "re": "\\bgh\\s+(repo|secret|release|gist)\\s+delete\\b", "note": "deletes a GitHub repo/secret/release" },
+    { "id": "cred.keychain-dump", "re": "\\bsecurity\\s+(dump-keychain|find-(generic|internet)-password)\\b", "note": "dumps macOS keychain credentials" },
+    { "id": "sys.osascript-admin", "re": "\\bosascript\\b[^\\n]*administrator\\s+privileges", "note": "macOS privilege escalation" },
+    { "id": "pkg.npm-global", "re": "\\bnpm\\s+(i|install|add)\\b[^|;&]*(\\s-g\\b|--global)", "note": "installs a package globally (mutates the system, not the project)" },
+    { "id": "pkg.pip-from-url", "re": "\\bpip3?\\s+install\\b[^|;&]*(https?://|git\\+)", "note": "pip-installs from an arbitrary URL/git source (supply-chain risk)" },
+    { "id": "pkg.brew-uninstall", "re": "\\bbrew\\s+(uninstall|remove|rm)\\b", "note": "removes a Homebrew package from the system" },
+    { "id": "db.drop-truncate", "re": "\\b(drop\\s+(table|database|schema)|truncate\\s+table)\\b", "note": "drops/truncates a database object (irreversible data loss)" },
+    { "id": "db.client-delete-no-where", "re": "\\b(psql|mysql|mariadb|sqlite3|mongosh?|supabase\\s+db|prisma\\s+db\\s+execute)\\b[^\\n]*\\b(delete\\s+from|update\\s+\\w+\\s+set)\\b(?![^;]*\\bwhere\\b)", "note": "unbounded DELETE/UPDATE (no WHERE) executed against a database" }
+  ],
+
+  "allowBash": [
+    { "id": "safe.read-nav", "re": "^\\s*(ls|pwd|cd|cat|bat|head|tail|less|more|wc|file|stat|tree|which|type|env|printenv|whoami|hostname|hostnamectl|date|cal|echo|clear|history|man|tldr|basename|dirname|realpath|readlink)\\b", "note": "read-only navigation / inspection" },
+    { "id": "safe.search", "re": "^\\s*(grep|egrep|fgrep|rg|ag|ack|find|fd|sort|uniq|cut|paste|tr|column|jq|yq|xxd|od|diff|comm|join|tee\\s+/dev/null|fold|nl|tac|rev|seq|expr)\\b", "note": "read-only search / text processing" },
+    { "id": "safe.sed-readonly", "re": "^\\s*sed\\s+-n\\b", "note": "read-only sed (-n, no in-place edit)" },
+    { "id": "safe.git-read", "re": "^\\s*git\\s+(status|diff|log|show|branch\\s*$|branch\\s+(-a|-r|-v|-l|--list|--show-current)|remote|fetch|stash\\s+list|rev-parse|ls-files|ls-tree|blame|describe|tag(\\s+-l|\\s+--list)?$|config\\s+--get|shortlog|reflog|cat-file|symbolic-ref|whatchanged|grep|show-ref|count-objects|verify-pack|merge-base)\\b", "note": "read-only git inspection" },
+    { "id": "safe.git-write", "re": "^\\s*git\\s+(add|commit|switch|restore\\s+--staged|merge\\s+--ff-only|pull(\\s+--ff-only)?|stash(\\s+(push|pop|apply|save))?|tag\\s+[\\w./-]|cherry-pick|rebase\\s+--(continue|abort|skip)|init|fetch|checkout\\s+-b\\b|checkout\\s+-{0,2}[\\w./-]+$|branch\\s+[\\w./-]+$)\\b", "note": "non-destructive git write (add/commit/branch/switch/stash)" },
+    { "id": "safe.node-pkg", "re": "^\\s*(npm|pnpm|yarn|bun)\\s+(run|test|start|build|lint|ci|install|i|add|format|fmt|typecheck|tsc|prettier|eslint|vitest|jest|dev|preview|outdated|list|ls|why|audit(?!\\s+fix\\s+--force))\\b", "note": "local Node package scripts / install (global -g is denied separately)" },
+    { "id": "safe.node-run", "re": "^\\s*(node|deno\\s+run|ts-node|tsx|nodemon)\\b", "note": "runs a local Node/TS script" },
+    { "id": "safe.python", "re": "^\\s*(python3?|py|uv|pipenv\\s+run|poetry\\s+run|conda\\s+run)\\s+(-m\\s+(pytest|venv|pip|unittest|http\\.server|json\\.tool|build|black|ruff|mypy|flask|django|uvicorn)|[\\w./-]+\\.py)\\b", "note": "runs a local Python script / module" },
+    { "id": "safe.py-test", "re": "^\\s*(pytest|tox|nox|ruff|black|mypy|flake8|isort)\\b", "note": "Python test / lint / format tooling" },
+    { "id": "safe.build-tools", "re": "^\\s*(make(?!\\s+install)|cmake|ninja|bazel\\s+(build|test)|cargo\\s+(build|test|run|check|clippy|fmt|doc|bench|tree|add)|go\\s+(build|test|run|vet|fmt|mod\\s+(tidy|download)|generate)|dotnet\\s+(build|test|run|restore|format)|gradle|gradlew|mvn|rake|bundle\\s+(install|exec)|swift\\s+(build|test|run))\\b", "note": "compiler / build / test toolchain" },
+    { "id": "safe.docker-read", "re": "^\\s*docker\\s+(build|compose\\s+(build|up|logs|ps|config|stop|down)|images|ps|logs|inspect|version|info|top|port)\\b", "note": "docker build / compose / inspect (non-destructive)" },
+    { "id": "safe.fs-scaffold", "re": "^\\s*(mkdir|touch|cp|mv|ln|rmdir|head\\s+-c)\\b", "note": "ordinary file scaffolding (create/copy/move)" },
+    { "id": "safe.localhost-http", "re": "^\\s*(curl|wget|http|https|xh|httpie)\\s+[^|]*\\b(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\]|::1)\\b", "note": "request to a local dev server (health check)" },
+    { "id": "safe.proc-info", "re": "^\\s*(ps|top|htop|btop|jobs|kill|pkill|killall|taskkill|netstat|ss|lsof|df|du|free|uptime|uname|tasklist|sysctl\\s+-n)\\b", "note": "local process / system inspection" },
+    { "id": "safe.misc", "re": "^\\s*(true|false|test|sleep|exit|set\\s+-|trap|wait|time|nohup|watch|yes\\s+\\|)\\b", "note": "harmless shell builtins" }
+  ],
+
+  "sensitiveBash": [
+    { "id": "ask.git-push-lease", "re": "\\bgit\\s+push\\b[^|;&]*--force-with-lease", "note": "force-push with lease (safer, but still rewrites history)" },
+    { "id": "ask.git-reset-hard-small", "re": "\\bgit\\s+reset\\s+--hard(\\s+HEAD~1)?\\s*$", "note": "discards uncommitted changes (git reset --hard)" },
+    { "id": "ask.git-discard", "re": "\\bgit\\s+(checkout|restore)\\s+(--\\s+)?\\.(\\s|$)", "note": "discards all uncommitted changes in the working tree" },
+    { "id": "ask.perm-recursive", "re": "\\b(chmod|chown)\\s+-\\w*R\\b", "note": "recursive permission/ownership change" },
+    { "id": "ask.net-copy-out", "re": "\\b(scp|rsync)\\b[^\\n]*(\\s\\S+@\\S+:|::)", "note": "copies files to a remote host" },
+    { "id": "ask.ssh", "re": "(^|[\\s|;&])ssh\\b", "note": "opens an SSH session to another host" },
+    { "id": "ask.docker-prune", "re": "\\bdocker\\s+(system\\s+prune|volume\\s+(rm|prune)|rm\\s+-f|image\\s+(rm|prune)|network\\s+(rm|prune)|container\\s+(rm|prune))\\b", "note": "removes Docker containers/volumes/images" },
+    { "id": "ask.cred-read", "re": "\\b(cat|less|more|head|tail|bat|type|nano|vi|vim|nvim|emacs|code|open|xxd|strings|grep|rg|cp|scp)\\b[^|;&]*(\\.env(\\.[\\w.]+)?\\b|/secrets?/|\\bid_rsa\\b|\\bid_ed25519\\b|\\.pem\\b|\\.key\\b|\\.aws/credentials|\\.ssh/|\\.npmrc\\b|\\.netrc\\b|\\.git-credentials\\b|credentials\\.json)", "note": "reads a secret / credential file (could expose secrets)" },
+    { "id": "ask.1password", "re": "\\bop\\s+(read|get|item\\s+get)\\b", "note": "reads from a 1Password vault" },
+    { "id": "ask.secret-write", "re": ">{1,2}\\s*[^|]*(\\.env|\\.aws/credentials|\\.ssh/|\\.netrc|\\.git-credentials)", "note": "writes to a secret / credential file" },
+    { "id": "ask.db-mutation", "re": "\\b(psql|mysql|mariadb|sqlite3|mongosh?|supabase\\s+db|prisma\\s+db\\s+execute|drizzle-kit)\\b[^\\n]*\\b(insert|update|delete|alter|create|migrate|push|reset|seed)\\b", "note": "executes a database mutation/migration" }
+  ],
+
+  "denyPath": [
+    { "id": "path.write-secret", "re": "(\\.env(\\.[\\w.]+)?$|/secrets?/|\\bid_rsa\\b|\\bid_ed25519\\b|\\.pem$|\\.aws/credentials$|/\\.ssh/|\\.git-credentials$|/credentials\\.json$|\\.netrc$|\\.npmrc$)", "note": "writing to a credential / secret file" },
+    { "id": "path.write-system", "re": "^([a-z]:/windows/|/etc/|/usr/|/bin/|/sbin/|/boot/|/system/|/library/)", "note": "writing into a protected system directory" }
+  ],
+
+  "sensitivePath": [
+    { "id": "path.ci", "re": "(/\\.github/workflows/|/\\.gitlab-ci|/\\.circleci/|jenkinsfile)", "note": "edits a CI/CD pipeline definition" },
+    { "id": "path.infra", "re": "(dockerfile$|/dockerfile|\\.tf$|\\.tfvars$|docker-compose|kustomization|/k8s/|\\.helm/)", "note": "edits infrastructure / container config" },
+    { "id": "path.lockfile", "re": "(package-lock\\.json$|pnpm-lock\\.yaml$|yarn\\.lock$|bun\\.lockb$|cargo\\.lock$|poetry\\.lock$|gemfile\\.lock$|composer\\.lock$)", "note": "edits a dependency lockfile" },
+    { "id": "path.claude-config", "re": "(/\\.claude/|/settings\\.json$|/settings\\.local\\.json$)", "note": "edits Claude Code configuration" },
+    { "id": "path.migration", "re": "(/migrations?/|/prisma/migrations/)", "note": "edits a database migration" }
+  ],
+
+  "sensitiveRead": [
+    { "id": "read.secret", "re": "(\\.env(\\.[\\w.]+)?$|/secrets?/|\\bid_rsa\\b|\\bid_ed25519\\b|\\.pem$|\\.key$|\\.aws/credentials$|/\\.ssh/|\\.git-credentials$|/credentials\\.json$|\\.netrc$|\\.npmrc$)", "note": "reads a secret / credential file into context" }
+  ],
+
+  "denyMcp": [
+    { "id": "mcp.destructive", "re": "__(delete|destroy|purge|drop|wipe|remove_all|trash)", "note": "MCP tool performs an irreversible destructive action" }
+  ],
+
+  "sensitiveMcp": [
+    { "id": "mcp.write", "re": "__(create|update|send|delete|remove|write|insert|move|label|archive|reply|post|put|patch|upload|share|revoke|merge)", "note": "MCP tool performs an external write/mutation" }
+  ],
+
+  "allowMcp": [
+    { "id": "mcp.read", "re": "__(list|search|get|read|fetch|find|query|view|show|describe|count|suggest|download)", "note": "read-only MCP tool" }
+  ]
+}
