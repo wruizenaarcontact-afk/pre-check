@@ -48,7 +48,7 @@ DB migrations, etc. stay denied by default but remain possible, deliberately and
 Requires Node.js on PATH. Clone into your Claude skills directory and run the installer:
 
 ```bash
-git clone <repo> ~/.claude/skills/pre-check
+git clone https://github.com/wruizenaarcontact-afk/pre-check.git ~/.claude/skills/pre-check
 node ~/.claude/skills/pre-check/bin/install.mjs   # merges hooks into ~/.claude/settings.json
 node ~/.claude/skills/pre-check/bin/manage.mjs sync   # calibrate to your existing permissions
 ```
