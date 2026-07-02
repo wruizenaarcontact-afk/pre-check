@@ -164,8 +164,13 @@ node …/bin/manage.mjs savings        # estimate the classifier round-trips / t
 
 `deny`-skips are confirmed (pre-check short-circuits, and it's a backstop during classifier outages);
 `allow`-skips assume a hook `allow` bypasses the classifier (very likely) or ride the docs-guaranteed
-narrow-allow-rule path (`promoteToSettings`). Measure it exactly with `/status` token usage, companion
-off vs on. `companion off` restores your prior config.
+narrow-allow-rule path (`promoteToSettings`). `companion off` restores your prior config.
+
+**Measuring it.** The Auto-mode classifier runs on a *server-side* model, so its tokens are **not** in
+`ccusage` / the local transcript (verified: firing classifier-triggering commands moves it by 0) — its
+saving shows in your **Anthropic account usage**. What *is* locally measurable: pre-check's own Haiku veto
+appears in `ccusage` as `claude-haiku-4-5`, and `companion on`'s `llm off` zeroes it. `manage savings`
+reports the exact count of round-trips pre-check resolved (the hard number) × an estimated per-call cost.
 
 ## Share what tripped you up
 

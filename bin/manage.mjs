@@ -436,8 +436,10 @@ function cmdSavings() {
   console.log(`  resolved by pre-check:        ${avoided}  (allow=${allow}, deny=${deny})  <- classifier round-trips avoided`);
   console.log(`  deferred to the classifier:   ${deferred}`);
   console.log(`  estimated tokens saved:       ~${comma(avoided * per)}  (at ~${per}/call)`);
-  console.log("  deny-skips are confirmed (pre-check short-circuits); allow-skips assume a hook allow bypasses");
-  console.log("  the classifier. Measure exactly via /status token usage with companion off vs on.");
+  console.log("  deny-skips are confirmed (pre-check short-circuits); allow-skips assume a hook allow bypasses the");
+  console.log("  classifier. The classifier is server-side — its tokens are NOT in ccusage/the local transcript");
+  console.log("  (measured: 0 delta), so its saving shows only in your Anthropic account usage. pre-check's own");
+  console.log("  Haiku veto cost IS in ccusage (model claude-haiku-4-5); `companion on` turns it off.");
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
