@@ -89,5 +89,17 @@ check("edit .claude/settings.json (still sensitive)", evaluatePath("c:/users/x/.
 check("read in-project .env (own -> allow)", evaluatePath("c:/project/.env", CWD, ROOT, rules, "read").decision, "allow");
 check("read foreign .aws/credentials (-> ask)", evaluatePath("/home/u/.aws/credentials", CWD, ROOT, rules, "read").decision, "ask");
 
+console.log("── phase D: risk dial (decisionPolicy) ──");
+const bashDp = (c, dp) => evaluateBash(c, rules, riskyRx, { llm: { enabled: true }, riskyScope: cfg.riskyScope, decisionPolicy: dp }).decision;
+const CAUTIOUS = { marginalWhenLlmOn: "ask", marginalWhenLlmOff: "ask" };
+const BALANCED = { marginalWhenLlmOn: "allow", marginalWhenLlmOff: "ask" };
+const TRUSTING = { marginalWhenLlmOn: "allow", marginalWhenLlmOff: "allow" };
+check("balanced: true-unknown -> ask", bashDp("zqwxytool --run", BALANCED), "ask");
+check("trusting: true-unknown -> allow", bashDp("zqwxytool --run", TRUSTING), "allow");
+check("cautious: true-unknown -> ask", bashDp("zqwxytool --run", CAUTIOUS), "ask");
+check("balanced: risky+llm -> allow (veto)", bashDp("npx some-cli", BALANCED), "allow");
+check("cautious: risky+llm -> ask", bashDp("npx some-cli", CAUTIOUS), "ask");
+check("trusting: deny still denies", bashDp("kubectl delete pod x", TRUSTING), "deny");
+
 console.log(`\n${fail === 0 ? "ALL PASS" : fail + " FAILED"}  (${pass}/${pass + fail})`);
 process.exit(fail ? 1 : 0);

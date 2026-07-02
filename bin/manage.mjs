@@ -65,6 +65,7 @@ function cmdMenu() {
   STATUS      "pre-check status"                 → current state, categories, counts
   ON / OFF    "turn pre-check off" / "on"        → master switch (off = normal prompting)
   MODE        "pre-check dry-run" / "enforce"    → report-only (log, don't block) vs enforce
+  RISK        "risk trusting" / "balanced"       → prompt appetite (cautious | balanced | trusting)
   CATEGORY    "gate web" / "stop gating edits"   → set bash|edit|read|web|mcp to gate|passthrough
   ADD CAT     "gate the Gmail MCP tools"         → add a custom category (tool-name regex)
   HAIKU VETO  "turn the Haiku veto off/on"       → keyless LLM veto for marginal commands
@@ -355,6 +356,29 @@ function cmdExportFeedback() {
   console.log(raw ? "  RAW file — review before sharing." : "  Redacted — safe to share; contains no raw command text.");
 }
 
+// ── risk dial (decisionPolicy preset) ─────────────────────────────────────────
+const RISK_PRESETS = {
+  cautious: { decisionPolicy: { marginalWhenLlmOn: "ask",   marginalWhenLlmOff: "ask" },   threshold: 3 },
+  balanced: { decisionPolicy: { marginalWhenLlmOn: "allow", marginalWhenLlmOff: "ask" },   threshold: 1 },
+  trusting: { decisionPolicy: { marginalWhenLlmOn: "allow", marginalWhenLlmOff: "allow" }, threshold: 1 },
+};
+function cmdRisk() {
+  const preset = (args[1] || "").toLowerCase();
+  if (!RISK_PRESETS[preset]) fail("usage: risk <cautious|balanced|trusting>");
+  const cfg = getConfig();
+  const p = RISK_PRESETS[preset];
+  cfg.decisionPolicy = { ...(cfg.decisionPolicy || {}), ...p.decisionPolicy };
+  cfg.learning = cfg.learning || {};
+  cfg.learning.threshold = p.threshold;
+  cfg.risk = preset;
+  setConfig(cfg);
+  ok(`risk preset = ${preset}`);
+  console.log(`  marginal risk-scoped (veto): ${p.decisionPolicy.marginalWhenLlmOn === "allow" ? "veto-allow" : "ask"}`);
+  console.log(`  marginal true-unknown:       ${p.decisionPolicy.marginalWhenLlmOff === "allow" ? "allow" : "ask"}`);
+  console.log(`  learn approved asks after:   ${p.threshold}`);
+  console.log("  deny rules + settings.json deny backstop + secret-read asks are UNCHANGED in every preset.");
+}
+
 // ── dispatch ─────────────────────────────────────────────────────────────────
 switch (cmd) {
   case "status": cmdStatus(); break;
@@ -373,5 +397,6 @@ switch (cmd) {
   case "logs": cmdLogs(); break;
   case "clear-cache": cmdClearCache(); break;
   case "export-feedback": case "export": cmdExportFeedback(); break;
+  case "risk": cmdRisk(); break;
   default: cmdMenu();
 }

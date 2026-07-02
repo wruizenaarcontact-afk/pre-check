@@ -89,6 +89,17 @@ postcheck({ tool_name: "Read", tool_input: { file_path: "/home/u/.aws/credential
 check("secret read is never learned (still asks)", read("/home/u/.aws/credentials").permissionDecision === "ask", "secret read must keep asking");
 if (learnedBefore !== null) fs.writeFileSync(PATHS.learned, learnedBefore); else { try { fs.rmSync(PATHS.learned, { force: true }); } catch { /* ignore */ } }
 
+console.log("── risk dial (manage risk) ──");
+const cfgBefore = fs.readFileSync(PATHS.config, "utf8");
+try {
+  manage("risk", "trusting");
+  check("trusting: true-unknown auto-allows", bash("zqwxytoolaa --run").permissionDecision === "allow", bash("zqwxytoolaa --run").permissionDecision);
+  manage("risk", "balanced");
+  check("balanced: true-unknown asks again", bash("zqwxytoolbb --run").permissionDecision === "ask", bash("zqwxytoolbb --run").permissionDecision);
+} finally {
+  fs.writeFileSync(PATHS.config, cfgBefore); // restore exact config
+}
+
 console.log("── feedback export (redaction + totals) ──");
 const logBefore = fs.existsSync(PATHS.log) ? fs.readFileSync(PATHS.log, "utf8") : null;
 const seed = [

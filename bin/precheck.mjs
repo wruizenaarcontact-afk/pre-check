@@ -241,8 +241,16 @@ function evaluateBash(command, rules, riskyRx, cfg) {
   // marginal — synced trust (imported settings allow-list) rescues an unrecognized command
   // the user already trusts, but NEVER overrode a deny/sensitive rule above.
   if (firstMatch(rules.syncedTrust, command)) return { decision: "allow", id: "synced.trust", note: "trusted via your settings.json allow-list" };
+  // Risk dial (cfg.decisionPolicy — set by `manage.mjs risk`). Defaults reproduce "balanced".
   const risky = riskyRx.some((rx) => rx.test(command));
-  if (cfg.llm?.enabled && risky) return { decision: "allow", id: "marginal.llm", note: "unrecognized but risk-scoped command — deferred to the Haiku veto", viaLlmNet: true };
+  const dp = cfg.decisionPolicy || {};
+  if (cfg.llm?.enabled && risky) {
+    if ((dp.marginalWhenLlmOn || "allow") === "allow")
+      return { decision: "allow", id: "marginal.llm", note: "unrecognized but risk-scoped command — deferred to the Haiku veto", viaLlmNet: true };
+    return { decision: "ask", id: "marginal", note: "unrecognized risk-scoped command — please confirm" };
+  }
+  if ((dp.marginalWhenLlmOff || "ask") === "allow")
+    return { decision: "allow", id: "marginal.trusted", note: "unrecognized command auto-allowed by the 'trusting' risk preset" };
   return { decision: "ask", id: "marginal", note: "unrecognized command — please confirm" };
 }
 
