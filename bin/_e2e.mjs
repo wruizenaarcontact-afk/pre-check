@@ -23,6 +23,7 @@ function precheck(payload) {
 const bash = (command) => precheck({ tool_name: "Bash", tool_input: { command }, cwd: "/c/p" });
 const read = (file_path) => precheck({ tool_name: "Read", tool_input: { file_path } });
 const psh = (command) => precheck({ tool_name: "PowerShell", tool_input: { command }, cwd: "/c/p" });
+const bashAuto = (command) => precheck({ tool_name: "Bash", tool_input: { command }, cwd: "/c/p", permission_mode: "auto" });
 function manage(...args) { return execFileSync(NODE, [path.join(BIN, "manage.mjs"), ...args], { encoding: "utf8" }); }
 function postcheck(payload) {
   try { execFileSync(NODE, [path.join(BIN, "postcheck.mjs")], { input: JSON.stringify(payload), encoding: "utf8", env: { ...process.env, PRECHECK_TEST: "1" } }); return true; }
@@ -99,6 +100,29 @@ try {
   check("balanced: true-unknown asks again", bash("zqwxytoolbb --run").permissionDecision === "ask", bash("zqwxytoolbb --run").permissionDecision);
 } finally {
   fs.writeFileSync(PATHS.config, cfgBefore); // restore exact config
+}
+
+console.log("── companion / Auto-mode combo (permission_mode=auto) ──");
+check("auto: marginal ask -> deferred (no-opinion)", bashAuto("zqwxytoolcc --run").permissionDecision === "(no-opinion)", bashAuto("zqwxytoolcc --run").permissionDecision);
+check("auto: deny still denies (free floor)", bashAuto("git push --force origin proddd").permissionDecision === "deny", bashAuto("git push --force origin proddd").permissionDecision);
+check("auto: allow still allows (skips classifier)", bashAuto("git status").permissionDecision === "allow", bashAuto("git status").permissionDecision);
+check("default mode: marginal still asks", bash("zqwxytooldd --run").permissionDecision === "ask", bash("zqwxytooldd --run").permissionDecision);
+const logForSavings = fs.existsSync(PATHS.log) ? fs.readFileSync(PATHS.log, "utf8") : null;
+const savingsSeed = [
+  { ts: "2026-07-02T00:00:00.000Z", autoMode: true, decision: "allow" },
+  { ts: "2026-07-02T00:00:01.000Z", autoMode: true, decision: "allow" },
+  { ts: "2026-07-02T00:00:02.000Z", autoMode: true, decision: "deny" },
+  { ts: "2026-07-02T00:00:03.000Z", autoMode: true, decision: "ask", deferred: true },
+  { ts: "2026-07-02T00:00:04.000Z", autoMode: false, decision: "allow" },
+];
+fs.mkdirSync(path.dirname(PATHS.log), { recursive: true });
+fs.writeFileSync(PATHS.log, savingsSeed.map((x) => JSON.stringify(x)).join("\n") + "\n");
+try {
+  const sav = manage("savings");
+  check("savings: avoided = allow(2)+deny(1)", /allow=2, deny=1/.test(sav), sav.replace(/\n/g, " ").slice(0, 120));
+  check("savings: deferred counted (1)", /deferred to the classifier:\s*1/.test(sav), sav.replace(/\n/g, " ").slice(0, 120));
+} finally {
+  if (logForSavings !== null) fs.writeFileSync(PATHS.log, logForSavings); else { try { fs.rmSync(PATHS.log, { force: true }); } catch { /* ignore */ } }
 }
 
 console.log("── PowerShell gating (via precheck) ──");

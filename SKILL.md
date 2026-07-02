@@ -83,7 +83,20 @@ node .../bin/manage.mjs llm on  |  off  [model]         # keyless Haiku veto
 node .../bin/manage.mjs sync                            # calibrate to settings.json (see below)
 node .../bin/manage.mjs logs 30   |   rules   |   clear-cache
 node .../bin/manage.mjs export-feedback                 # redacted, shareable usage report (--raw --i-consent for raw)
+node .../bin/manage.mjs companion on  |  off            # combo with Claude Code Auto mode (saves classifier tokens)
+node .../bin/manage.mjs savings                         # est. classifier round-trips / tokens avoided under Auto mode
 ```
+
+## Companion with Claude Code Auto mode
+
+When the session is in **Auto mode** (`permission_mode: "auto"`), pre-check **auto-enters companion
+behavior**: it emits only `allow`/`deny` and **defers every `ask` to Auto mode's classifier** (no
+double-prompt). Each allow/deny it resolves **skips a classifier round-trip** — deny is a confirmed
+free/offline safety floor; allow skips it if a hook `allow` short-circuits the classifier (very likely,
+and `promoteToSettings` gives a docs-guaranteed narrow-allow path). `manage companion on` additionally
+turns the Haiku veto **off** (zero pre-check tokens) and enables `promoteToSettings`; `off` restores the
+prior config. `manage savings` estimates the tokens saved. Reserve `ask`-heavy standalone use for
+non-Auto sessions.
 
 **on/off actually add/remove the hooks** — because the Haiku veto is a separate prompt hook that
 can't read our config, `off` must remove the hooks (not just flip a flag), or the veto keeps firing.

@@ -13,6 +13,15 @@
   // it would decide but blocks/allows nothing (tune for a day, then enforce). `/pre-check mode`.
   "mode": "enforce",
 
+  // COMPANION with Claude Code's Auto permission mode. When on (auto-detected when the session is in
+  // `auto`, or forced via `/pre-check companion on`), pre-check emits only allow/deny and DEFERS every
+  // "ask" to Auto mode's own classifier — so it never double-prompts, and each allow/deny it resolves
+  // skips a classifier round-trip. `companion on` also turns the Haiku veto off (zero pre-check tokens).
+  "companion": false,
+
+  // Rough per-classifier-call token estimate used by `/pre-check savings` to price avoided round-trips.
+  "savings": { "tokensPerClassifierCall": 2500 },
+
   // CATEGORIES — the holistic knob. Each entry maps a tool-name regex to a mode:
   //   "gate"        = pre-check evaluates the call (auto allow / deny / ask)
   //   "passthrough" = pre-check stays silent; normal Claude Code prompt applies

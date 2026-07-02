@@ -22,6 +22,7 @@ export const PATHS = {
   install: path.join(STATE_DIR, "state", "install.json"),
   grants: path.join(STATE_DIR, "state", "grants.json"),
   learned: path.join(STATE_DIR, "state", "learned.json"),
+  companionBackup: path.join(STATE_DIR, "state", "companion-backup.json"),
 };
 
 // Namespaced signature for the learning store: category + whitespace-normalized target.

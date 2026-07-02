@@ -21,6 +21,8 @@ import {
 const DEFAULT_CONFIG = {
   enabled: true,
   mode: "enforce", // "enforce" | "report" (report = dry-run: log would-be decisions, enforce nothing)
+  companion: false, // combo with Claude Code Auto mode: allow/deny only, DEFER "ask" to the classifier
+  savings: { tokensPerClassifierCall: 2500 }, // estimate for the `savings` counter (classifier round-trip)
   categories: {
     bash: { match: "^Bash$", mode: "gate" },
     powershell: { match: "^PowerShell$", mode: "gate" },
@@ -631,11 +633,21 @@ function main() {
     return emitNoOpinion();
   }
 
+  // Companion mode — auto-on under Claude Code's Auto permission mode (permission_mode === "auto"), or
+  // forced via `manage companion on`. pre-check becomes a thin deterministic layer: allow/deny resolve
+  // here (each skips an Auto-mode classifier round-trip), while ambiguous "ask" verdicts are DEFERRED to
+  // the classifier (no double-prompt). Deny still short-circuits as the free, offline safety floor.
+  const autoMode = (input.permission_mode || "") === "auto";
+  const companion = cfg.companion === true || autoMode;
+  const deferred = companion && result.decision === "ask";
+
   logDecision({
     ts: isoNow(), tool: toolName, category: cat.name, decision: result.decision,
-    ruleId: result.id, viaLlmNet: !!result.viaLlmNet, enforced: true, cacheHit, snippet: snippet(target, cfg),
+    ruleId: result.id, viaLlmNet: !!result.viaLlmNet, enforced: true, cacheHit, autoMode, deferred,
+    snippet: snippet(target, cfg),
   }, cfg);
 
+  if (deferred) return emitNoOpinion();
   return emit(result.decision, tag(result.decision, result.id, result.note));
 }
 

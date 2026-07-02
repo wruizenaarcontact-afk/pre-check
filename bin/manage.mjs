@@ -66,6 +66,8 @@ function cmdMenu() {
   ON / OFF    "turn pre-check off" / "on"        → master switch (off = normal prompting)
   MODE        "pre-check dry-run" / "enforce"    → report-only (log, don't block) vs enforce
   RISK        "risk trusting" / "balanced"       → prompt appetite (cautious | balanced | trusting)
+  COMPANION   "companion on" / "off"             → combo with Claude Code Auto mode (saves classifier tokens)
+  SAVINGS     "pre-check savings"                → estimated classifier round-trips / tokens avoided
   CATEGORY    "gate web" / "stop gating edits"   → set bash|edit|read|web|mcp to gate|passthrough
   ADD CAT     "gate the Gmail MCP tools"         → add a custom category (tool-name regex)
   HAIKU VETO  "turn the Haiku veto off/on"       → keyless LLM veto for marginal commands
@@ -379,6 +381,65 @@ function cmdRisk() {
   console.log("  deny rules + settings.json deny backstop + secret-read asks are UNCHANGED in every preset.");
 }
 
+// ── companion mode (combo with Claude Code Auto mode) ─────────────────────────
+function cmdCompanion() {
+  const state = (args[1] || "").toLowerCase();
+  if (!["on", "off"].includes(state)) fail("usage: companion <on|off>");
+  const cfg = getConfig();
+  if (state === "on") {
+    if (!fs.existsSync(PATHS.companionBackup)) {              // snapshot what we change (don't clobber an existing backup)
+      writeJson(PATHS.companionBackup, {
+        companion: cfg.companion === true,
+        llm: !!(cfg.llm && cfg.llm.enabled),
+        promoteToSettings: !!(cfg.syncSettings && cfg.syncSettings.promoteToSettings),
+      });
+    }
+    cfg.companion = true;
+    cfg.llm = cfg.llm || {}; cfg.llm.enabled = false;                                  // zero pre-check tokens (removes veto hook)
+    cfg.syncSettings = cfg.syncSettings || {}; cfg.syncSettings.promoteToSettings = true; // learned-safe -> narrow settings allows
+    setConfig(cfg); reconcile(cfg);
+    ok("companion mode ON (optimized for Claude Code Auto mode)");
+    console.log("  - Haiku veto:        off (no pre-check tokens)");
+    console.log("  - ambiguous asks:    deferred to Auto mode's classifier (no double-prompt)");
+    console.log("  - allow/deny:        resolved by pre-check (each skips a classifier round-trip)");
+    console.log("  - promoteToSettings: on (learned-safe commands -> narrow settings.json allows)");
+    console.log("  pre-check also auto-enters this behavior whenever the session is in Auto mode. `/pre-check savings` to see the estimate.");
+  } else {
+    const b = readJson(PATHS.companionBackup, null);
+    cfg.companion = b ? !!b.companion : false;
+    cfg.llm = cfg.llm || {}; cfg.llm.enabled = b ? !!b.llm : true;
+    cfg.syncSettings = cfg.syncSettings || {}; cfg.syncSettings.promoteToSettings = b ? !!b.promoteToSettings : false;
+    setConfig(cfg); reconcile(cfg);
+    try { fs.rmSync(PATHS.companionBackup, { force: true }); } catch { /* ignore */ }
+    ok("companion mode OFF (restored prior config)");
+  }
+}
+
+// ── savings counter (classifier round-trips pre-check avoided under Auto mode) ─
+function cmdSavings() {
+  const cfg = getConfig();
+  const per = cfg.savings?.tokensPerClassifierCall || 2500;
+  const lines = tailLines(PATHS.log, 100000);
+  let allow = 0, deny = 0, deferred = 0, total = 0;
+  for (const l of lines) {
+    let r; try { r = JSON.parse(l); } catch { continue; }
+    if (!r.autoMode) continue;                                        // only Auto-mode decisions count
+    total++;
+    if (r.deferred) deferred++;
+    else if (r.decision === "allow") allow++;
+    else if (r.decision === "deny") deny++;
+  }
+  const avoided = allow + deny;
+  const comma = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  ok("pre-check savings under Claude Code Auto mode");
+  console.log(`  Auto-mode decisions logged:   ${total}`);
+  console.log(`  resolved by pre-check:        ${avoided}  (allow=${allow}, deny=${deny})  <- classifier round-trips avoided`);
+  console.log(`  deferred to the classifier:   ${deferred}`);
+  console.log(`  estimated tokens saved:       ~${comma(avoided * per)}  (at ~${per}/call)`);
+  console.log("  deny-skips are confirmed (pre-check short-circuits); allow-skips assume a hook allow bypasses");
+  console.log("  the classifier. Measure exactly via /status token usage with companion off vs on.");
+}
+
 // ── dispatch ─────────────────────────────────────────────────────────────────
 switch (cmd) {
   case "status": cmdStatus(); break;
@@ -398,5 +459,7 @@ switch (cmd) {
   case "clear-cache": cmdClearCache(); break;
   case "export-feedback": case "export": cmdExportFeedback(); break;
   case "risk": cmdRisk(); break;
+  case "companion": cmdCompanion(); break;
+  case "savings": cmdSavings(); break;
   default: cmdMenu();
 }

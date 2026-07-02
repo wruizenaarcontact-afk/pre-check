@@ -74,6 +74,8 @@ node ~/.claude/skills/pre-check/bin/manage.mjs risk trusting  # prompt appetite:
 node ~/.claude/skills/pre-check/bin/manage.mjs set web gate  # gate/ignore a category: bash|powershell|edit|read|web|mcp
 node ~/.claude/skills/pre-check/bin/manage.mjs llm off       # disable the Haiku veto (pattern-only)
 node ~/.claude/skills/pre-check/bin/manage.mjs export-feedback  # redacted, shareable usage report
+node ~/.claude/skills/pre-check/bin/manage.mjs companion on  # combo with Claude Code Auto mode (saves tokens)
+node ~/.claude/skills/pre-check/bin/manage.mjs savings       # est. classifier round-trips / tokens avoided
 node ~/.claude/skills/pre-check/bin/uninstall.mjs            # full removal
 ```
 
@@ -120,6 +122,24 @@ The **risk dial** (`manage risk <preset>`) sets how much is decided for you:
 | `trusting` | allow | Haiku veto | 1 approval |
 
 Deny rules, the `settings.json` deny backstop, and secret-read asks stay put in **every** preset.
+
+## Companion mode: combo with Claude Code Auto mode
+
+[Auto mode](https://code.claude.com/docs/en/permission-modes#eliminate-prompts-with-auto-mode) runs a
+server-side classifier on every non-trivial action (each a token round-trip). pre-check pairs with it as
+a **free, deterministic layer**: when the session is in Auto mode, pre-check **auto-enters companion
+behavior** — it emits only `allow`/`deny` and **defers every `ask` to the classifier** (no
+double-prompting), so each allow/deny it resolves **skips a classifier round-trip**.
+
+```bash
+node …/bin/manage.mjs companion on   # + turns the Haiku veto off (zero pre-check tokens) & promoteToSettings
+node …/bin/manage.mjs savings        # estimate the classifier round-trips / tokens avoided
+```
+
+`deny`-skips are confirmed (pre-check short-circuits, and it's a backstop during classifier outages);
+`allow`-skips assume a hook `allow` bypasses the classifier (very likely) or ride the docs-guaranteed
+narrow-allow-rule path (`promoteToSettings`). Measure it exactly with `/status` token usage, companion
+off vs on. `companion off` restores your prior config.
 
 ## Share what tripped you up
 
