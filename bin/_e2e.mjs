@@ -69,6 +69,38 @@ check("3rd approval suggests promotion", /PROMOTE-SUGGESTED/.test(cue), "no cue"
 manage("promote", PCMD);
 check("after promote -> allow (forceAllow)", bash(PCMD).permissionDecision === "allow", bash(PCMD).permissionDecision);
 
+console.log("── feedback export (redaction + totals) ──");
+const logBefore = fs.existsSync(PATHS.log) ? fs.readFileSync(PATHS.log, "utf8") : null;
+const seed = [
+  { ts: "2026-07-02T00:00:00.000Z", tool: "Bash", category: "bash", decision: "deny",  ruleId: "git.push-force", enforced: true, cacheHit: false, snippet: "git push --force origin SECRETBRANCH" },
+  { ts: "2026-07-02T00:00:01.000Z", tool: "Bash", category: "bash", decision: "ask",   ruleId: "marginal",       enforced: true, cacheHit: false, snippet: "frobnicate --token=SUPERSECRETTOKEN" },
+  { ts: "2026-07-02T00:00:02.000Z", tool: "Bash", category: "bash", decision: "allow", ruleId: "safe",           enforced: true, cacheHit: false, snippet: "ls -la" },
+  { ts: "2026-07-02T00:00:03.000Z", tool: "Read", category: "read", decision: "ask",   ruleId: "read.secret",    enforced: true, cacheHit: false, snippet: "/home/u/.aws/credentials" },
+];
+fs.mkdirSync(path.dirname(PATHS.log), { recursive: true });
+fs.writeFileSync(PATHS.log, seed.map((x) => JSON.stringify(x)).join("\n") + "\n");
+let exportFile = null;
+try {
+  const out = manage("export-feedback");
+  exportFile = (/written:\s*(\S+)/.exec(out) || [])[1] || null;
+  check("export wrote a file", !!exportFile && fs.existsSync(exportFile), out.slice(0, 80));
+  const rep = JSON.parse(fs.readFileSync(exportFile, "utf8"));
+  check("export totals deny=1", rep.totals.deny === 1, JSON.stringify(rep.totals));
+  check("export totals ask=2", rep.totals.ask === 2, JSON.stringify(rep.totals));
+  check("export totals allow=1", rep.totals.allow === 1, JSON.stringify(rep.totals));
+  check("export marked redacted", rep.redacted === true, String(rep.redacted));
+  const blob = JSON.stringify(rep);
+  check("no raw arg leaks (token)", !blob.includes("SUPERSECRETTOKEN"), "leaked token");
+  check("no raw arg leaks (branch)", !blob.includes("SECRETBRANCH"), "leaked branch");
+  check("ruleIds surfaced in report", /git\.push-force/.test(blob) && /read\.secret/.test(blob), "missing ruleIds");
+} finally {
+  if (exportFile) { try { fs.rmSync(exportFile, { force: true }); } catch { /* ignore */ } }
+}
+let rawRefused = false;
+try { manage("export-feedback", "--raw"); } catch { rawRefused = true; }
+check("--raw without --i-consent is refused", rawRefused);
+if (logBefore !== null) fs.writeFileSync(PATHS.log, logBefore); else { try { fs.rmSync(PATHS.log, { force: true }); } catch { /* ignore */ } }
+
 // cleanup: restore rules.user.json, clear grants
 if (rulesUserBefore !== null) fs.writeFileSync(PATHS.rulesUser, rulesUserBefore);
 try { fs.rmSync(PATHS.grants, { force: true }); } catch { /* ignore */ }

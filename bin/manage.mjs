@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { PATHS, STATE_DIR, readJsonc, readJson, writeJson, ensureDir, globToRegex } from "./lib.mjs";
+import { PATHS, STATE_DIR, SKILL_DIR, readJsonc, readJson, writeJson, ensureDir, globToRegex } from "./lib.mjs";
 import { loadSettings, saveSettings, syncHooks, removeOurHooks, isOurGroup, SETTINGS_PATH } from "./settings.mjs";
 
 const args = process.argv.slice(2);
@@ -71,6 +71,7 @@ function cmdMenu() {
   CALIBRATE   "sync with my permissions"         → import settings.json allow-list (reviewed)
   RULES       "let me edit the rules"            → where to add extraAllow/extraDeny
   LOGS        "show the pre-check log"           → recent decisions
+  EXPORT      "export feedback"                  → redacted, shareable usage report
   ESCALATE    (automatic on a hard deny)         → I ask you, then one-time grant + retry
 
 Everything runs via  node ~/.claude/skills/pre-check/bin/manage.mjs <command>.`);
@@ -263,6 +264,97 @@ function cmdClearCache() {
   ok("decision cache cleared");
 }
 
+// ── feedback export (redacted, shareable) ─────────────────────────────────────
+function skillVersion() {
+  try { const t = fs.readFileSync(path.join(SKILL_DIR, "SKILL.md"), "utf8"); const m = /^version:\s*(.+)$/m.exec(t); return m ? m[1].trim() : "unknown"; }
+  catch { return "unknown"; }
+}
+function redactToken(tok) {
+  const t = String(tok || "").replace(/^['"]|['"]$/g, "");
+  if (!t) return "<empty>";
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)) return "<env=>";                                  // VAR=value assignment
+  if (/[\/\\]/.test(t) || /^[A-Za-z]:$/i.test(t) || t.startsWith("~") || t.startsWith(".")) return "<path>";
+  if (/^[A-Za-z][\w.-]{0,39}$/.test(t)) return t;                                            // a plain command name
+  return "<other>";
+}
+// A command "shape": redacted first token + salted hash of the rest. Emits no raw text, but the
+// same command maps to the same shape within one export so frequencies still aggregate.
+function shapeOf(snippet, salt) {
+  const s = String(snippet || "").trim();
+  if (!s) return "<empty>";
+  if (/^[0-9a-f]{12}$/.test(s)) return "hash:" + s;                                          // logCommandText:false already hashed it
+  const first = s.split(/\s+/)[0] || "";
+  const rest = s.slice(first.length);
+  const h = crypto.createHash("sha256").update(salt + rest).digest("hex").slice(0, 8);
+  return redactToken(first) + (rest.trim() ? "#" + h : "");
+}
+function cmdExportFeedback() {
+  const raw = args.includes("--raw");
+  const consent = args.includes("--i-consent");
+  if (raw && !consent) fail("--raw includes real command text — re-run with:  export-feedback --raw --i-consent");
+  const cfg = getConfig();
+  const salt = crypto.randomBytes(8).toString("hex");
+  const lines = tailLines(PATHS.log, 100000);
+
+  const totals = {}, byCategory = {}, byRule = {}, friction = {};
+  let records = 0, errors = 0, firstTs = null, lastTs = null;
+  for (const l of lines) {
+    let r; try { r = JSON.parse(l); } catch { continue; }
+    if (r.event === "error") { errors++; continue; }
+    if (!r.decision) continue;
+    records++;
+    if (r.ts) { if (!firstTs) firstTs = r.ts; lastTs = r.ts; }
+    const dec = r.enforced === false ? `would:${r.wouldBe}` : r.decision;
+    totals[dec] = (totals[dec] || 0) + 1;
+    const cat = r.category || "?";
+    (byCategory[cat] = byCategory[cat] || {})[dec] = (byCategory[cat][dec] || 0) + 1;
+    if (r.ruleId) byRule[r.ruleId] = (byRule[r.ruleId] || 0) + 1;
+    const eff = r.enforced === false ? r.wouldBe : r.decision;              // what caused friction
+    if (eff === "ask" || eff === "deny") {
+      const shape = raw ? String(r.snippet || "") : shapeOf(r.snippet, salt);
+      const key = `${r.ruleId || "?"} | ${shape}`;
+      friction[key] = (friction[key] || 0) + 1;
+    }
+  }
+  const topRules = Object.entries(byRule).sort((a, b) => b[1] - a[1]).slice(0, 15);
+  const topFriction = Object.entries(friction).sort((a, b) => b[1] - a[1]).slice(0, 25);
+
+  const report = {
+    _banner: raw
+      ? "pre-check feedback export — RAW MODE: contains real command text you chose to share. Review before sending."
+      : "pre-check feedback export — redacted: decision counts + command SHAPES only (first token + salted hash); no raw command text or file contents.",
+    _privacy: "Please review before sharing. Share via the pre-check repo issues to help improve the rules.",
+    generatedAt: new Date().toISOString(),
+    redacted: !raw,
+    config: {
+      version: skillVersion(),
+      mode: cfg.mode || "enforce",
+      risk: cfg.risk || "balanced",
+      llm: cfg.llm?.enabled ? (cfg.llm.model || "on") : "off",
+      logCommandText: cfg.logging?.logCommandText !== false,
+      categories: Object.fromEntries(Object.entries(cfg.categories || {}).map(([k, v]) => [k, v.mode])),
+    },
+    window: { records, errors, firstTs, lastTs },
+    totals,
+    byCategory,
+    topRules: topRules.map(([id, n]) => ({ id, n })),
+    topFriction: topFriction.map(([group, n]) => ({ group, n })),
+  };
+
+  const dir = path.join(STATE_DIR, "export");
+  ensureDir(dir);
+  let idx = 1;
+  while (fs.existsSync(path.join(dir, `feedback-${idx}.json`))) idx++;
+  const outFile = path.join(dir, `feedback-${idx}.json`);
+  fs.writeFileSync(outFile, JSON.stringify(report, null, 2) + "\n");
+
+  ok(`feedback export written: ${outFile}` + (raw ? "   (RAW — contains real commands)" : "   (redacted)"));
+  console.log(`  records: ${records}  errors: ${errors}  window: ${firstTs || "?"} .. ${lastTs || "?"}`);
+  console.log("  decisions: " + (Object.entries(totals).map(([k, v]) => `${k}=${v}`).join("  ") || "none yet"));
+  if (topRules.length) console.log("  top rules: " + topRules.slice(0, 8).map(([k, v]) => `${k}(${v})`).join("  "));
+  console.log(raw ? "  RAW file — review before sharing." : "  Redacted — safe to share; contains no raw command text.");
+}
+
 // ── dispatch ─────────────────────────────────────────────────────────────────
 switch (cmd) {
   case "status": cmdStatus(); break;
@@ -280,5 +372,6 @@ switch (cmd) {
   case "rules": cmdRules(); break;
   case "logs": cmdLogs(); break;
   case "clear-cache": cmdClearCache(); break;
+  case "export-feedback": case "export": cmdExportFeedback(); break;
   default: cmdMenu();
 }
