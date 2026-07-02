@@ -35,6 +35,14 @@ if (cfg.categories?.read?.match === "^(Read|Glob|Grep)$") {
   console.log("  - migrated read category -> ^Read$ (gate) for secret-read protection");
 }
 
+// 2c) migration: add the PowerShell gate category for installs that predate it, so PowerShell
+// tool calls are evaluated (and the hook matcher + PS veto get wired below).
+if (cfg.categories && !cfg.categories.powershell) {
+  cfg.categories = { ...cfg.categories, powershell: { match: "^PowerShell$", mode: "gate" } };
+  writeJson(PATHS.config, cfg);
+  console.log("  - added PowerShell gate category (upgrade)");
+}
+
 // 3) settings.json merge
 let settings;
 try { settings = loadSettings(); }
