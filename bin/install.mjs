@@ -2,7 +2,7 @@
 // install.mjs — wire the pre-check hooks into ~/.claude/settings.json (idempotent).
 import fs from "node:fs";
 import path from "node:path";
-import { PATHS, STATE_DIR, SKILL_DIR, ensureDir, readJsonc } from "./lib.mjs";
+import { PATHS, STATE_DIR, SKILL_DIR, ensureDir, readJsonc, writeJson } from "./lib.mjs";
 import { loadSettings, saveSettings, syncHooks, addDenyBackstop, SETTINGS_PATH } from "./settings.mjs";
 
 const USER_RULES_TEMPLATE = `{
@@ -26,6 +26,14 @@ if (!fs.existsSync(PATHS.rulesUser)) fs.writeFileSync(PATHS.rulesUser, USER_RULE
 fs.writeFileSync(PATHS.enabledMarker, "on\n");
 
 const cfg = readJsonc(PATHS.config);
+
+// 2b) migration: adopt the narrower read-gate default for installs that still carry the
+// old passthrough read category, so secret reads via the Read tool get caught.
+if (cfg.categories?.read?.match === "^(Read|Glob|Grep)$") {
+  cfg.categories.read = { match: "^Read$", mode: "gate" };
+  writeJson(PATHS.config, cfg);
+  console.log("  - migrated read category -> ^Read$ (gate) for secret-read protection");
+}
 
 // 3) settings.json merge
 let settings;

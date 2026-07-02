@@ -9,6 +9,10 @@
   // Code prompting. Toggle with `/pre-check on` | `off`.
   "enabled": true,
 
+  // Enforcement mode. "enforce" acts on decisions; "report" is a dry-run that LOGS what
+  // it would decide but blocks/allows nothing (tune for a day, then enforce). `/pre-check mode`.
+  "mode": "enforce",
+
   // CATEGORIES — the holistic knob. Each entry maps a tool-name regex to a mode:
   //   "gate"        = pre-check evaluates the call (auto allow / deny / ask)
   //   "passthrough" = pre-check stays silent; normal Claude Code prompt applies
@@ -18,7 +22,7 @@
   "categories": {
     "bash": { "match": "^Bash$",                      "mode": "gate" },
     "edit": { "match": "^(Edit|Write|NotebookEdit)$",  "mode": "gate" },
-    "read": { "match": "^(Read|Glob|Grep)$",           "mode": "passthrough" },
+    "read": { "match": "^Read$",                        "mode": "gate" },
     "web":  { "match": "^(WebFetch|WebSearch)$",        "mode": "passthrough" },
     "mcp":  { "match": "^mcp__",                        "mode": "passthrough" }
   },
@@ -27,6 +31,11 @@
   // command that matches `riskyScope` is optimistically allowed and Haiku may
   // veto it. When off, marginal commands fall back to a normal prompt (ask).
   "llm": { "enabled": true, "model": "claude-haiku-4-5", "timeoutSeconds": 25 },
+
+  // Escalation: a DENIED command Claude truly can't work around can be unlocked by the user
+  // one time (single-use, short TTL). After `promoteAfter` approvals of the same command, the
+  // gate offers to promote it to a permanent scoped allow. Decline keeps one-time grants.
+  "escalation": { "ttlSeconds": 300, "promoteAfter": 3 },
 
   // Which Bash commands are "risky" enough to (a) wire into the prompt hook's
   // `if:` scope and (b) be eligible for optimistic-allow-with-veto when marginal.

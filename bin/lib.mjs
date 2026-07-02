@@ -19,6 +19,7 @@ export const PATHS = {
   log: path.join(STATE_DIR, "logs", "decisions.jsonl"),
   enabledMarker: path.join(STATE_DIR, "state", "enabled"),
   install: path.join(STATE_DIR, "state", "install.json"),
+  grants: path.join(STATE_DIR, "state", "grants.json"),
 };
 
 // Lenient JSON: tolerates // and /* */ comments and trailing commas (string-aware).

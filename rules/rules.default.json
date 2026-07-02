@@ -40,7 +40,16 @@
     { "id": "pkg.pip-from-url", "re": "\\bpip3?\\s+install\\b[^|;&]*(https?://|git\\+)", "note": "pip-installs from an arbitrary URL/git source (supply-chain risk)" },
     { "id": "pkg.brew-uninstall", "re": "\\bbrew\\s+(uninstall|remove|rm)\\b", "note": "removes a Homebrew package from the system" },
     { "id": "db.drop-truncate", "re": "\\b(drop\\s+(table|database|schema)|truncate\\s+table)\\b", "note": "drops/truncates a database object (irreversible data loss)" },
-    { "id": "db.client-delete-no-where", "re": "\\b(psql|mysql|mariadb|sqlite3|mongosh?|supabase\\s+db|prisma\\s+db\\s+execute)\\b[^\\n]*\\b(delete\\s+from|update\\s+\\w+\\s+set)\\b(?![^;]*\\bwhere\\b)", "note": "unbounded DELETE/UPDATE (no WHERE) executed against a database" }
+    { "id": "db.client-delete-no-where", "re": "\\b(psql|mysql|mariadb|sqlite3|mongosh?|supabase\\s+db|prisma\\s+db\\s+execute)\\b[^\\n]*\\b(delete\\s+from|update\\s+\\w+\\s+set)\\b(?![^;]*\\bwhere\\b)", "note": "unbounded DELETE/UPDATE (no WHERE) executed against a database" },
+
+    { "id": "git.push-force-lease", "re": "\\bgit\\s+push\\b[^|;&]*--force-with-lease", "note": "force-push rewrites remote history (even --force-with-lease); not regular coding" },
+    { "id": "git.reset-hard", "re": "\\bgit\\s+reset\\s+--hard\\b", "note": "git reset --hard discards changes/commits irreversibly" },
+    { "id": "git.discard-worktree", "re": "\\bgit\\s+(checkout|restore)\\s+(--\\s+)?\\.(\\s|$)", "note": "discards all uncommitted changes in the working tree" },
+    { "id": "perm.recursive", "re": "\\b(chmod|chown)\\s+-\\w*R\\b", "note": "recursive permission/ownership change" },
+    { "id": "net.copy-out", "re": "\\b(scp|rsync)\\b[^\\n]*(\\s\\S+@\\S+:|::)", "note": "copies files to a remote host (possible data egress)" },
+    { "id": "net.ssh", "re": "(^|[\\s|;&])ssh\\b", "note": "opens an SSH session to another host" },
+    { "id": "docker.destructive", "re": "\\bdocker\\s+(system\\s+prune|volume\\s+(rm|prune)|rm\\s+-f|image\\s+(rm|prune)|network\\s+(rm|prune)|container\\s+(rm|prune))\\b", "note": "removes Docker containers/volumes/images" },
+    { "id": "db.mutation", "re": "\\b(psql|mysql|mariadb|sqlite3|mongosh?|supabase\\s+db|prisma\\s+db\\s+execute|drizzle-kit)\\b[^\\n]*\\b(insert|update|delete|alter|create|migrate|push|reset|seed)\\b", "note": "database mutation/migration (rerouteable; approve via escalation if truly needed)" }
   ],
 
   "allowBash": [
@@ -62,17 +71,9 @@
   ],
 
   "sensitiveBash": [
-    { "id": "ask.git-push-lease", "re": "\\bgit\\s+push\\b[^|;&]*--force-with-lease", "note": "force-push with lease (safer, but still rewrites history)" },
-    { "id": "ask.git-reset-hard-small", "re": "\\bgit\\s+reset\\s+--hard(\\s+HEAD~1)?\\s*$", "note": "discards uncommitted changes (git reset --hard)" },
-    { "id": "ask.git-discard", "re": "\\bgit\\s+(checkout|restore)\\s+(--\\s+)?\\.(\\s|$)", "note": "discards all uncommitted changes in the working tree" },
-    { "id": "ask.perm-recursive", "re": "\\b(chmod|chown)\\s+-\\w*R\\b", "note": "recursive permission/ownership change" },
-    { "id": "ask.net-copy-out", "re": "\\b(scp|rsync)\\b[^\\n]*(\\s\\S+@\\S+:|::)", "note": "copies files to a remote host" },
-    { "id": "ask.ssh", "re": "(^|[\\s|;&])ssh\\b", "note": "opens an SSH session to another host" },
-    { "id": "ask.docker-prune", "re": "\\bdocker\\s+(system\\s+prune|volume\\s+(rm|prune)|rm\\s+-f|image\\s+(rm|prune)|network\\s+(rm|prune)|container\\s+(rm|prune))\\b", "note": "removes Docker containers/volumes/images" },
     { "id": "ask.cred-read", "re": "\\b(cat|less|more|head|tail|bat|type|nano|vi|vim|nvim|emacs|code|open|xxd|strings|grep|rg|cp|scp)\\b[^|;&]*(\\.env(\\.[\\w.]+)?\\b|/secrets?/|\\bid_rsa\\b|\\bid_ed25519\\b|\\.pem\\b|\\.key\\b|\\.aws/credentials|\\.ssh/|\\.npmrc\\b|\\.netrc\\b|\\.git-credentials\\b|credentials\\.json)", "note": "reads a secret / credential file (could expose secrets)" },
     { "id": "ask.1password", "re": "\\bop\\s+(read|get|item\\s+get)\\b", "note": "reads from a 1Password vault" },
-    { "id": "ask.secret-write", "re": ">{1,2}\\s*[^|]*(\\.env|\\.aws/credentials|\\.ssh/|\\.netrc|\\.git-credentials)", "note": "writes to a secret / credential file" },
-    { "id": "ask.db-mutation", "re": "\\b(psql|mysql|mariadb|sqlite3|mongosh?|supabase\\s+db|prisma\\s+db\\s+execute|drizzle-kit)\\b[^\\n]*\\b(insert|update|delete|alter|create|migrate|push|reset|seed)\\b", "note": "executes a database mutation/migration" }
+    { "id": "ask.secret-write", "re": ">{1,2}\\s*[^|]*(\\.env|\\.aws/credentials|\\.ssh/|\\.netrc|\\.git-credentials)", "note": "writes to a secret / credential file" }
   ],
 
   "denyPath": [
