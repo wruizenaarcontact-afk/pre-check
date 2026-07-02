@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 export const SKILL_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -20,7 +21,13 @@ export const PATHS = {
   enabledMarker: path.join(STATE_DIR, "state", "enabled"),
   install: path.join(STATE_DIR, "state", "install.json"),
   grants: path.join(STATE_DIR, "state", "grants.json"),
+  learned: path.join(STATE_DIR, "state", "learned.json"),
 };
+
+// Namespaced signature for the learning store: category + whitespace-normalized target.
+export function learnSig(category, target) {
+  return crypto.createHash("sha256").update(`${category}\n${String(target).trim().replace(/\s+/g, " ")}`).digest("hex");
+}
 
 // Lenient JSON: tolerates // and /* */ comments and trailing commas (string-aware).
 export function parseJsonc(text) {

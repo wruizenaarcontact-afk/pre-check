@@ -14,7 +14,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
-  PATHS, STATE_DIR, readJsonc, readJson, deepMerge, ensureDir, globToRegex,
+  PATHS, STATE_DIR, readJsonc, readJson, deepMerge, ensureDir, globToRegex, learnSig,
 } from "./lib.mjs";
 
 // ── built-in fallback config (used only if config.json is missing/corrupt) ──
@@ -31,6 +31,7 @@ const DEFAULT_CONFIG = {
   llm: { enabled: true },
   riskyScope: [],
   escalation: { ttlSeconds: 300, promoteAfter: 3 },
+  learning: { enabled: true, threshold: 1, neverLearn: ["read.secret", "ask.cred-read", "ask.1password", "ask.secret-write"] },
   cache: { enabled: true, ttlSeconds: 86400, maxEntries: 5000, scope: "global" },
   projectRoot: { markers: [".git", "package.json", "pyproject.toml", "go.mod", "Cargo.toml", ".precheck-context.yaml"], fallback: "cwd" },
   decisionPolicy: { marginalWhenLlmOn: "allow", marginalWhenLlmOff: "ask", onParseError: "ask", onConfigError: "ask" },
@@ -382,6 +383,22 @@ function consumeGrant(cmd) {
   } catch { return false; }
 }
 
+// ── learned approvals (an ASK the user approved before → auto-allow now) ──────
+// Local lookup only, NEVER sent to the LLM. Persistent (not single-use). Applies only to
+// commands whose raw verdict is "ask", and never to secret-read rules (cfg.learning.neverLearn).
+function consumeLearned(category, target, ruleId, cfg) {
+  try {
+    const lc = cfg.learning || {};
+    if (lc.enabled === false) return false;
+    if ((lc.neverLearn || []).includes(ruleId)) return false;
+    const l = readJson(PATHS.learned, null);
+    if (!l) return false;
+    const e = l[learnSig(category, target)];
+    if (!e) return false;
+    return (e.approvals || 0) >= (lc.threshold || 1);
+  } catch { return false; }
+}
+
 // ── log ─────────────────────────────────────────────────────────────────────
 function logDecision(rec, cfg) {
   if (!cfg.logging?.enabled) return;
@@ -455,6 +472,13 @@ function main() {
     cacheHit = false;
   }
 
+  // a learned approval (you've approved this exact ask before) auto-allows it — keeps walk-away
+  // runs moving. Overrides even a cached "ask"; never applies to secret reads (see consumeLearned).
+  if (result.decision === "ask" && consumeLearned(cat.name, target, result.id, cfg)) {
+    result = { decision: "allow", id: "learned", note: "auto-approved: you have approved this before" };
+    cacheHit = false;
+  }
+
   // report-only (dry-run): log what we WOULD decide, but enforce nothing.
   if (cfg.mode === "report") {
     logDecision({ ts: isoNow(), tool: toolName, category: cat.name, decision: "noop", wouldBe: result.decision, ruleId: result.id, enforced: false, cacheHit, snippet: snippet(target, cfg) }, cfg);
@@ -475,7 +499,10 @@ function snippet(t, cfg) {
 }
 function isoNow() { return new Date(readClock()).toISOString(); }
 
-export { parseUnits, classifyRm, evaluateBash, evaluatePath, evaluateMcp, loadRules, categorize, DEFAULT_CONFIG };
+export {
+  parseUnits, classifyRm, evaluateBash, evaluatePath, evaluateMcp, loadRules, categorize,
+  loadConfig, findRoot, loadProjectContext, applyProjectContext, isoNow, readStdin, DEFAULT_CONFIG,
+};
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {

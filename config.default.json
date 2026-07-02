@@ -37,6 +37,12 @@
   // gate offers to promote it to a permanent scoped allow. Decline keeps one-time grants.
   "escalation": { "ttlSeconds": 300, "promoteAfter": 3 },
 
+  // Keyless learning cache. When a command whose verdict is "ask" is approved (it then RUNS), a
+  // PostToolUse hook records it; after `threshold` approvals the deterministic gate auto-allows it.
+  // This is a LOCAL lookup — it is NEVER sent to Haiku, so it adds zero token cost (it removes LLM
+  // calls). Secret-read rules in `neverLearn` are never auto-learned (they always keep asking).
+  "learning": { "enabled": true, "threshold": 1, "neverLearn": ["read.secret", "ask.cred-read", "ask.1password", "ask.secret-write"] },
+
   // Which Bash commands are "risky" enough to (a) wire into the prompt hook's
   // `if:` scope and (b) be eligible for optimistic-allow-with-veto when marginal.
   // Single source of truth: install.mjs joins these with `|` for the hook `if:`,

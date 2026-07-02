@@ -38,6 +38,12 @@ export function nodeCommand() {
   return `"${node}" "${script}"`;
 }
 
+export function postCommand() {
+  const node = fwd(process.execPath);
+  const script = fwd(path.join(SKILL_DIR, "bin", "postcheck.mjs"));
+  return `"${node}" "${script}"`;
+}
+
 // Build the command-hook matcher from the union of gate-mode category regexes.
 export function gatedMatcher(cfg) {
   const parts = [];
@@ -49,16 +55,19 @@ export function gatedMatcher(cfg) {
 
 export function isOurGroup(group) {
   const hooks = (group && group.hooks) || [];
-  return hooks.some((h) => (h.command || "").includes("precheck.mjs"))
+  return hooks.some((h) => (h.command || "").includes("precheck.mjs") || (h.command || "").includes("postcheck.mjs"))
     || hooks.some((h) => h.type === "prompt" && (h.prompt || "").includes(VETO_SENTINEL));
 }
 
 export function removeOurHooks(settings) {
-  if (settings.hooks && Array.isArray(settings.hooks.PreToolUse)) {
-    settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter((g) => !isOurGroup(g));
-    if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
-    if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+  if (!settings.hooks) return settings;
+  for (const evt of ["PreToolUse", "PostToolUse"]) {
+    if (Array.isArray(settings.hooks[evt])) {
+      settings.hooks[evt] = settings.hooks[evt].filter((g) => !isOurGroup(g));
+      if (settings.hooks[evt].length === 0) delete settings.hooks[evt];
+    }
   }
+  if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
   return settings;
 }
 
@@ -86,6 +95,15 @@ export function syncHooks(settings, cfg) {
     if (cfg.llm.model) hook.model = cfg.llm.model;
     if (ifScope) hook.if = ifScope;
     settings.hooks.PreToolUse.push({ matcher: "Bash", hooks: [hook] });
+  }
+
+  // (C) learning capture — a PostToolUse hook records approved "asks" so they stop prompting.
+  if (cfg.learning?.enabled !== false) {
+    settings.hooks.PostToolUse = settings.hooks.PostToolUse || [];
+    settings.hooks.PostToolUse.push({
+      matcher,
+      hooks: [{ type: "command", command: postCommand(), statusMessage: "pre-check: learning…", timeout: 15 }],
+    });
   }
   return settings;
 }

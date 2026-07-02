@@ -23,6 +23,10 @@ function precheck(payload) {
 const bash = (command) => precheck({ tool_name: "Bash", tool_input: { command }, cwd: "/c/p" });
 const read = (file_path) => precheck({ tool_name: "Read", tool_input: { file_path } });
 function manage(...args) { return execFileSync(NODE, [path.join(BIN, "manage.mjs"), ...args], { encoding: "utf8" }); }
+function postcheck(payload) {
+  try { execFileSync(NODE, [path.join(BIN, "postcheck.mjs")], { input: JSON.stringify(payload), encoding: "utf8", env: { ...process.env, PRECHECK_TEST: "1" } }); return true; }
+  catch { return false; }
+}
 
 let pass = 0, fail = 0;
 function check(label, cond, detail = "") { (cond ? pass++ : fail++); console.log(`${cond ? "PASS" : "FAIL"}  ${label}${cond ? "" : "  <<< " + detail}`); }
@@ -70,6 +74,20 @@ for (let i = 0; i < 3; i++) cue = manage("grant-once", PCMD);
 check("3rd approval suggests promotion", /PROMOTE-SUGGESTED/.test(cue), "no cue");
 manage("promote", PCMD);
 check("after promote -> allow (forceAllow)", bash(PCMD).permissionDecision === "allow", bash(PCMD).permissionDecision);
+
+console.log("── learning cache (approve once -> auto-allow) ──");
+const learnedBefore = fs.existsSync(PATHS.learned) ? fs.readFileSync(PATHS.learned, "utf8") : null;
+try { fs.rmSync(PATHS.learned, { force: true }); } catch { /* ignore */ }
+const LCMD = "zpqxytestcmd --frobnicate";
+check("marginal cmd asks first", bash(LCMD).permissionDecision === "ask", bash(LCMD).permissionDecision);
+postcheck({ tool_name: "Bash", tool_input: { command: LCMD }, cwd: "/c/p" });        // simulate approval + run
+check("after 1 approval -> auto-allow (learned)", bash(LCMD).permissionDecision === "allow", bash(LCMD).permissionDecision);
+try { fs.rmSync(PATHS.learned, { force: true }); } catch { /* ignore */ }
+postcheck({ tool_name: "Bash", tool_input: { command: "ls -la" }, cwd: "/c/p" });     // auto-allowed -> not an ask
+check("auto-allowed cmd is NOT learned", !fs.existsSync(PATHS.learned), "ls should not be recorded");
+postcheck({ tool_name: "Read", tool_input: { file_path: "/home/u/.aws/credentials" }, cwd: "/c/p" });
+check("secret read is never learned (still asks)", read("/home/u/.aws/credentials").permissionDecision === "ask", "secret read must keep asking");
+if (learnedBefore !== null) fs.writeFileSync(PATHS.learned, learnedBefore); else { try { fs.rmSync(PATHS.learned, { force: true }); } catch { /* ignore */ } }
 
 console.log("── feedback export (redaction + totals) ──");
 const logBefore = fs.existsSync(PATHS.log) ? fs.readFileSync(PATHS.log, "utf8") : null;
