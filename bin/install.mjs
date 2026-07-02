@@ -45,11 +45,18 @@ if (cfg.categories && !cfg.categories.powershell) {
 
 // 2d) migration: route inline interpreter eval (node -e / -p, ts-node/tsx -e) through the Haiku
 // veto instead of a silent allow — add the globs to riskyScope for installs that predate them.
-const evalGlobs = ["Bash(node -e*)", "Bash(node -p*)", "Bash(node --print*)", "Bash(ts-node -e*)", "Bash(tsx -e*)"];
-if (Array.isArray(cfg.riskyScope) && !cfg.riskyScope.includes("Bash(node -e*)")) {
+const evalGlobs = [
+  "Bash(node -e*)", "Bash(node -p*)", "Bash(node --eval*)", "Bash(node --print*)",
+  "Bash(node -r*)", "Bash(node --require*)", "Bash(node --import*)", "Bash(node --loader*)", "Bash(node --experimental-loader*)",
+  "Bash(ts-node -e*)", "Bash(ts-node -r*)", "Bash(ts-node --require*)",
+  "Bash(tsx -e*)", "Bash(tsx --import*)", "Bash(tsx --require*)",
+  "Bash(nodemon -r*)", "Bash(nodemon --require*)",
+  "Bash(deno run *http*)", "Bash(deno eval*)", "Bash(bun -e*)",
+];
+if (Array.isArray(cfg.riskyScope) && !cfg.riskyScope.includes("Bash(node -r*)")) {
   cfg.riskyScope = [...cfg.riskyScope, ...evalGlobs.filter((g) => !cfg.riskyScope.includes(g))];
   writeJson(PATHS.config, cfg);
-  console.log("  - added inline-eval (node -e/-p, ts-node/tsx -e) to riskyScope (upgrade)");
+  console.log("  - routed interpreter eval/preload (node -e/-r, --require/--loader, deno run <url>) through the veto (upgrade)");
 }
 
 // 3) settings.json merge
