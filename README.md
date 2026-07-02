@@ -65,6 +65,32 @@ Uninstall (removes only what it added):
 node ~/.claude/skills/pre-check/bin/uninstall.mjs
 ```
 
+## Drive it from Claude Code
+
+You rarely touch the CLI directly — just talk to Claude, or use the `/pre-check` skill:
+
+- **`/pre-check`** (no args) → shows the command menu.
+- **Natural language** — Claude runs the right `manage` command for you: *"switch pre-check to
+  trusting"*, *"turn on companion mode"*, *"why was that blocked?"*, *"gate the Gmail MCP tools"*,
+  *"export a feedback report"*, *"how many tokens has pre-check saved?"*, *"turn the gate off"*.
+- After a hard **deny**, Claude runs the escalation flow (asks you, then issues a one-time grant).
+
+### What you can tune (no code)
+
+| Knob | How | Effect |
+|---|---|---|
+| **Risk dial** | `manage risk cautious\|balanced\|trusting` | how much is auto-decided vs asked |
+| **Companion mode** | `manage companion on\|off` (auto-on in Auto mode) | pair with Claude Code Auto mode; save classifier tokens |
+| **Categories** | `manage set bash\|edit\|read\|web\|mcp\|powershell gate\|passthrough` | which tools the gate evaluates |
+| **Haiku veto** | `manage llm on\|off [model]` | keyless LLM veto for marginal commands |
+| **Dry-run** | `manage mode report\|enforce` | log would-be decisions without acting |
+| **Rules** | `~/.claude/precheck/rules.user.json` — `extraAllow` / `extraDeny` / `extraSensitive`, `disabled:[id]` | add / remove specific rules |
+| **Per-project** | `.precheck-context.yaml` at a repo root | project-scoped allow / deny / confirm |
+| **Learning** | `config.json` → `learning.threshold` / `neverLearn` | how fast approved asks are remembered |
+| **Calibrate** | `manage sync` | import your `settings.json` allow-list as trusted |
+
+Full operator manual: [`SKILL.md`](SKILL.md).
+
 ## Turn it on/off
 
 ```bash
