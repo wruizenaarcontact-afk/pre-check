@@ -58,6 +58,7 @@
     { "id": "safe.sed-readonly", "re": "^\\s*sed\\s+-n\\b", "note": "read-only sed (-n, no in-place edit)" },
     { "id": "safe.git-read", "re": "^\\s*git\\s+(status|diff|log|show|branch\\s*$|branch\\s+(-a|-r|-v|-l|--list|--show-current)|remote|fetch|stash\\s+list|rev-parse|ls-files|ls-tree|blame|describe|tag(\\s+-l|\\s+--list)?$|config\\s+--get|shortlog|reflog|cat-file|symbolic-ref|whatchanged|grep|show-ref|count-objects|verify-pack|merge-base)\\b", "note": "read-only git inspection" },
     { "id": "safe.git-write", "re": "^\\s*git\\s+(add|commit|switch|restore\\s+--staged|merge\\s+--ff-only|pull(\\s+--ff-only)?|stash(\\s+(push|pop|apply|save))?|tag\\s+[\\w./-]|cherry-pick|rebase\\s+--(continue|abort|skip)|init|fetch|checkout\\s+-b\\b|checkout\\s+-{0,2}[\\w./-]+$|branch\\s+[\\w./-]+$)\\b", "note": "non-destructive git write (add/commit/branch/switch/stash)" },
+    { "id": "safe.gh-read", "re": "^\\s*gh\\s+(auth\\s+status|(repo|pr|issue|release|run|workflow|gist|label|cache)\\s+(list|view|status))\\b", "note": "read-only gh inspection (auth status, repo/pr/issue/release view/list)" },
     { "id": "safe.node-pkg", "re": "^\\s*(npm|pnpm|yarn|bun)\\s+(run|test|start|build|lint|ci|install|i|add|format|fmt|typecheck|tsc|prettier|eslint|vitest|jest|dev|preview|outdated|list|ls|why|audit(?!\\s+fix\\s+--force))\\b", "note": "local Node package scripts / install (global -g is denied separately)" },
     { "id": "safe.node-run", "re": "^\\s*(node|deno\\s+run|ts-node|tsx|nodemon)\\b", "note": "runs a local Node/TS script" },
     { "id": "safe.python", "re": "^\\s*(python3?|py|uv|pipenv\\s+run|poetry\\s+run|conda\\s+run)\\s+(-m\\s+(pytest|venv|pip|unittest|http\\.server|json\\.tool|build|black|ruff|mypy|flask|django|uvicorn)|[\\w./-]+\\.py)\\b", "note": "runs a local Python script / module" },
@@ -85,7 +86,7 @@
     { "id": "path.ci", "re": "(/\\.github/workflows/|/\\.gitlab-ci|/\\.circleci/|jenkinsfile)", "note": "edits a CI/CD pipeline definition" },
     { "id": "path.infra", "re": "(dockerfile$|/dockerfile|\\.tf$|\\.tfvars$|docker-compose|kustomization|/k8s/|\\.helm/)", "note": "edits infrastructure / container config" },
     { "id": "path.lockfile", "re": "(package-lock\\.json$|pnpm-lock\\.yaml$|yarn\\.lock$|bun\\.lockb$|cargo\\.lock$|poetry\\.lock$|gemfile\\.lock$|composer\\.lock$)", "note": "edits a dependency lockfile" },
-    { "id": "path.claude-config", "re": "(/\\.claude/|/settings\\.json$|/settings\\.local\\.json$)", "note": "edits Claude Code configuration" },
+    { "id": "path.claude-config", "re": "(/settings\\.json$|/settings\\.local\\.json$|/hooks\\.json$)", "note": "edits Claude Code settings/hooks" },
     { "id": "path.migration", "re": "(/migrations?/|/prisma/migrations/)", "note": "edits a database migration" }
   ],
 

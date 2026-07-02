@@ -195,6 +195,13 @@ function classifyRm(unit, safeBuildDirs) {
 // ── evaluators ──────────────────────────────────────────────────────────────
 function firstMatch(list, text) { for (const r of list) if (r.rx.test(text)) return r; return null; }
 
+// git -C <path> / -c k=v global flags sit before the subcommand and break the anchored git
+// rules — for BOTH allow (git -C /r status) and deny (git -C /r push --force). Strip them so the
+// normalized `git <subcommand>` matches as intended; non-git units pass through untouched.
+function stripGitGlobalFlags(unit) {
+  return unit.replace(/^(\s*git\s+)((?:-C\s+\S+|-c\s+\S+=\S+)\s+)+/i, "$1");
+}
+
 function evaluateBash(command, rules, riskyRx, cfg) {
   // whole-pipeline exfil patterns first
   const pipe = firstMatch(rules.denyPipeline, command);
@@ -206,21 +213,22 @@ function evaluateBash(command, rules, riskyRx, cfg) {
   const bump = (decision, id, note) => { if (rank[decision] > rank[worst]) { worst = decision; info = { id, note }; } };
 
   for (const unit of units) {
+    const u = stripGitGlobalFlags(unit); // normalize `git -C/-c` global flags before matching
     // (0) deliberately force-allowed (user extraAllow / project context / promoted rule) —
     //     wins over deny. The settings.json deny-backstop still blocks catastrophic literals.
-    const t = firstMatch(rules.forceAllow, unit);
+    const t = firstMatch(rules.forceAllow, u);
     if (t) { bump("allow", t.id, t.note); continue; }
     // (1) explicit deny patterns
-    const d = firstMatch(rules.denyBash, unit);
+    const d = firstMatch(rules.denyBash, u);
     if (d) { bump("deny", d.id, d.note); continue; }
     // (2) rm classifier (recursive deletes)
-    const rm = classifyRm(unit, rules.safeBuildDirs);
+    const rm = classifyRm(u, rules.safeBuildDirs);
     if (rm) { bump(rm.verdict, rm.id, rm.note); continue; }
     // (3) sensitive — checked before the generic allow so "cat .env" asks, not allows
-    const s = firstMatch(rules.sensitiveBash, unit);
+    const s = firstMatch(rules.sensitiveBash, u);
     if (s) { bump("ask", s.id, s.note); continue; }
     // (4) built-in safe allow
-    if (firstMatch(rules.allowBash, unit)) { bump("allow", "safe", "routine command"); continue; }
+    if (firstMatch(rules.allowBash, u)) { bump("allow", "safe", "routine command"); continue; }
     // (5) nothing matched -> marginal
     bump("marginal", "marginal", "unrecognized command");
   }
@@ -257,7 +265,13 @@ function evaluatePath(filePath, cwd, root, rules, kind) {
   const abs = normPath(filePath, cwd);
   if (kind === "read") {
     const s = firstMatch(rules.sensitiveRead, abs);
-    if (s) return { decision: "ask", id: s.id, note: s.note };
+    if (s) {
+      // reading a secret file INSIDE your own project is routine dev work; only foreign/home
+      // secrets (~/.ssh, ~/.aws, out-of-project .env) still ask. Never auto-learned (see main()).
+      const r = root ? normPath(root, cwd) : null;
+      if (r && (abs === r || abs.startsWith(r + "/"))) return { decision: "allow", id: "read.own-env", note: "reading a secret file inside your own project" };
+      return { decision: "ask", id: s.id, note: s.note };
+    }
     return { decision: "allow", id: "read.ok", note: "ordinary read" };
   }
   const d = firstMatch(rules.denyPath, abs);
@@ -425,7 +439,7 @@ function main() {
     try {
       if (cat.name === "bash") result = evaluateBash(target, rules, riskyRx, cfg);
       else if (cat.name === "edit") result = evaluatePath(target, cwd, root, rules, "edit");
-      else if (cat.name === "read") result = evaluatePath(target, cwd, null, rules, "read");
+      else if (cat.name === "read") result = evaluatePath(target, cwd, root, rules, "read");
       else if (cat.name === "mcp") result = evaluateMcp(toolName, rules);
       else result = { decision: "ask", id: "gated.confirm", note: `gated ${cat.name} call — please confirm` };
     } catch (e) {

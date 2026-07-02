@@ -58,8 +58,10 @@ manage("mode", "enforce");
 check("enforce mode restored -> deny", bash("rm -rf /").permissionDecision === "deny");
 
 console.log("── read-tool gating ──");
-check("Read .env -> ask", read("/c/p/.env").permissionDecision === "ask");
+check("Read foreign .env -> ask", read("/c/p/.env").permissionDecision === "ask");
 check("Read README -> allow", read("/c/p/README.md").permissionDecision === "allow");
+const SKILL = path.dirname(BIN);
+check("Read own-project .env -> allow", precheck({ tool_name: "Read", tool_input: { file_path: path.join(SKILL, ".env") }, cwd: SKILL }).permissionDecision === "allow", "in-project secret read should auto-allow");
 
 console.log("── adaptive promotion ──");
 const PCMD = "kubectl delete pod xyz";

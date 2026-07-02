@@ -76,5 +76,18 @@ check("mcp gmail search_threads", mcp("mcp__claude_ai_Gmail__search_threads"), "
 check("mcp gmail create_draft", mcp("mcp__claude_ai_Gmail__create_draft"), "ask");
 check("mcp x delete_all", mcp("mcp__x__delete_all"), "deny");
 
+console.log("── phase C: sharpened rules ──");
+check("git -C /repo status (global flag)", bash("git -C /repo status"), "allow");
+check("git -c k=v commit (global flag)", bash("git -c user.name=x commit -m y"), "allow");
+check("git -C /repo push --force still denied", bash("git -C /repo push --force origin dev"), "deny");
+check("gh auth status", bash("gh auth status"), "allow");
+check("gh repo view owner/repo", bash("gh repo view owner/repo"), "allow");
+check("gh repo delete still denied", bash("gh repo delete owner/repo"), "deny");
+const CLAUDE = "c:/users/x/.claude";
+check("edit .claude skill README (now in-project)", evaluatePath("c:/users/x/.claude/skills/foo/README.md", CLAUDE, CLAUDE, rules, "edit").decision, "allow");
+check("edit .claude/settings.json (still sensitive)", evaluatePath("c:/users/x/.claude/settings.json", CLAUDE, CLAUDE, rules, "edit").decision, "ask");
+check("read in-project .env (own -> allow)", evaluatePath("c:/project/.env", CWD, ROOT, rules, "read").decision, "allow");
+check("read foreign .aws/credentials (-> ask)", evaluatePath("/home/u/.aws/credentials", CWD, ROOT, rules, "read").decision, "ask");
+
 console.log(`\n${fail === 0 ? "ALL PASS" : fail + " FAILED"}  (${pass}/${pass + fail})`);
 process.exit(fail ? 1 : 0);
