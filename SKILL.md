@@ -117,8 +117,9 @@ To explain "why was X blocked?": the deny reason and the log carry the `ruleId`;
 - Fails to **ask**, never to **allow** (corrupt input/config/rules → ask).
 - One-time grants are exact-match, single-use, short-TTL, and logged.
 - The Haiku veto only tightens marginal commands; it treats the command as untrusted data.
-- **Guardrail, not a sandbox.** It trusts your toolchain: `node file.js` / `npm run x` / `deno run <url>`
-  run *code you point them at*. Inline eval (`node -e`/`-p`) is routed to the veto, not silently allowed.
-  Obfuscation via variables (`X=rm; $X …`) degrades to ask/veto. For untrusted input, pair with OS
-  sandboxing. See `SECURITY.md` for the full threat model, the 2026-07 audit, and residuals.
+- **Guardrail, not a sandbox.** It trusts your toolchain: `node file.js` / `npm run x` run *code you
+  point them at*. Inline eval (`node -e`/`-p`), preload (`-r`/`--require`/`--loader`), remote
+  (`deno run <url>`) and stdin execution are caught by a tokenizing classifier and **asked** (learned
+  once approved). Obfuscation via variables (`X=rm; $X …`) degrades to ask/veto. For untrusted input,
+  pair with OS sandboxing. See `SECURITY.md` for the full threat model, the 2026-07 audit, and residuals.
 - Fully reversible: `uninstall` removes only what `install` added; deleting `~/.claude/precheck` wipes state.

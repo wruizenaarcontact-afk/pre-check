@@ -19,16 +19,20 @@ Because it trusts your toolchain, the moment pre-check allows an interpreter it 
 interpreter runs. `node script.js`, `npm run <script>`, `tsx file.ts`, `deno run <url>`, `python file.py`
 are **allowed** — they run *code you point them at*. That's by design (it's how dev works).
 
-**Inline eval is different and is treated as risky:** `node -e '<code>'` / `node -p` / `ts-node -e` /
-`tsx -e` take code *straight from the command string* (the sharp edge under prompt-injection), so they
-are routed to the **Haiku veto** instead of a silent allow (`python -c` / `ruby -e` already ask). This
-was hardened in the 2026-07 audit (finding F1).
+**Inline eval, module-preload, remote and stdin execution are different and are gated:**
+`node -e '<code>'` / `-p`, `-r`/`--require`/`--import`/`--loader` (preload), `deno run <url|npm:|jsr:>`,
+`deno run -` / `node /dev/stdin`, `deno eval`, `bun -e`, `bunx` run code *from the command string,
+a preloaded module, a remote source, or stdin* (the sharp edge under prompt-injection). A tokenizing
+classifier (robust to quoting like `node '-e'`, and to app-level flags after the script such as
+`node server.js -p 8080`) routes these to a **deterministic ask** — and the learning cache remembers
+your approval, so a given form prompts only the first time. Hardened in the 2026-07 audit (F1) and its
+two adversarial-verification rounds.
 
 ## Known limits & residuals
 
 | # | Limit | Behavior | Mitigation |
 |---|---|---|---|
-| F1 | Interpreters run code you point them at | `node file.js`, `npm run x`, `deno run <url>` → allow | Inline `-e`/`-p` eval → veto; sandbox for untrusted input |
+| F1 | Interpreters run code you point them at | `node file.js`, `npm run x` → allow | Inline eval / preload (`-r`) / remote / stdin → **ask** (learned once approved); sandbox for untrusted input |
 | F2/F3 | Regex evasion via **variable indirection** (`X=rm; $X -rf /`) and `$(…)` substitution | Downgraded to **ask/veto**, never silent-allow on `balanced` | Quote/backslash splits (`s""udo`, `\sudo`, `curl \| "sh"`) *are* caught |
 | F5 | `#` is **not** treated as a shell comment | Fail-safe **over-block** (`ls # rm -rf /` → deny) | Intentional; blocks comment-hiding tricks |
 | F6 | The **`trusting`** risk preset skips the veto on true-unknowns | Obfuscated marginals can silent-allow **on `trusting` only** | Default `balanced` keeps the human/veto backstop |
@@ -45,7 +49,9 @@ A black-box + offline audit (~40 live tool calls, ~200 offline evaluations) conf
 well-tuned and produced findings F1–F7. The full pre-fix report is archived at
 [docs/audit-2026-07.md](docs/audit-2026-07.md). Fixed since:
 
-- **F1** — inline interpreter eval (`node -e`/`-p`, `ts-node`/`tsx -e`) routed to the veto (was a silent allow).
+- **F1** — interpreter inline-eval / module-preload (`-r`/`--require`/`--loader`) / remote (`deno run <url>`) /
+  stdin execution routed to a deterministic **ask** via a tokenizing classifier (was a silent allow). Two
+  adversarial-verification rounds closed quoted-flag bypasses (`node '-e'`) and app-flag false-denies.
 - **F4** — the fork-bomb rule was dead code (unit-splitting shredded it); moved to `denyPipeline` (raw-command, pre-split).
 - **F2/F3** — quote/backslash obfuscation (`s""udo`, `su'd'o`, `\sudo`, `curl | "sh"`) is now de-obfuscated before matching.
 

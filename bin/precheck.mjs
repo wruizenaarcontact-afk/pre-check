@@ -239,6 +239,70 @@ function stripObfuscation(s) {
     .replace(/\\(?=[A-Za-z])/g, "");     // \sudo -> sudo
 }
 
+// Strip a leading `env VAR=val ...` wrapper so the wrapped command is re-classified (env FOO=bar
+// node app.js -> node app.js; env X=y rm -rf / -> rm -rf /). Bare `env` / `env -i` are untouched.
+function stripEnvPrefix(unit) {
+  return unit.replace(/^(\s*)env\s+(?:[A-Za-z_]\w*=\S*\s+)+/i, "$1");
+}
+
+// Shell-ish tokenizer that strips surrounding quotes from each token (quote-aware). Used to inspect
+// an interpreter's OWN flag region robustly (so `node '-e'` == `node -e`, and app flags after the
+// script are never mistaken for interpreter flags).
+function tokenizeArgs(s) {
+  const toks = []; let buf = "", q = "", inQ = false, has = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQ) { if (c === q) inQ = false; else buf += c; continue; }
+    if (c === '"' || c === "'") { inQ = true; q = c; has = true; continue; }
+    if (/\s/.test(c)) { if (has) { toks.push(buf); buf = ""; has = false; } continue; }
+    buf += c; has = true;
+  }
+  if (has) toks.push(buf);
+  return toks;
+}
+
+// Classify an interpreter invocation by walking ONLY its own flag region (up to the script or `--`),
+// tokenized + de-quoted. Returns "exec" when it runs inline code / preloads a module / fetches remote
+// or reads stdin (route to a deterministic ASK, robust vs quoting), else null (fall through to the
+// normal allow rules — a plain file run stays a silent allow).
+function classifyInterpreter(unit) {
+  const m = /^\s*(deno\s+run|deno\s+eval|ts-node|tsx|nodemon|bunx|node|bun)\b(.*)$/i.exec(unit);
+  if (!m) return null;
+  const head = m[1].toLowerCase().replace(/\s+/g, " ");
+  const toks = tokenizeArgs(m[2]);
+  if (head === "deno eval" || head === "bunx") return "exec";
+  if (head === "bun") {
+    if (toks[0] === "x") return "exec";                                       // bun x <pkg>
+    if (/^(-e|--eval)$/i.test(toks[0] || "")) return "exec";                  // bun -e <code>
+    return null;                                                             // bun run/test/... -> safe.node-pkg
+  }
+  if (head === "deno run") {
+    for (const t of toks) {
+      if (t === "--") break;
+      if (t === "-" || /^(https?:\/\/|npm:|jsr:|\/dev\/(stdin|fd))/i.test(t)) return "exec"; // stdin / remote
+      if (t.startsWith("-")) continue;                                        // deno flag
+      return null;                                                           // local file
+    }
+    return null;
+  }
+  // node / ts-node / tsx / nodemon — inline-eval + module-preload flags (per-interpreter meaning)
+  const evalFlags = head === "nodemon" ? /^(-r|--require|--exec|-x)$/i
+    : head === "tsx" ? /^(--require|--import|--loader)$/i
+      : /^(-e|-p|--eval|--print|-r|--require|--import|--loader|--experimental-loader)$/i;
+  const evalAttached = (head === "node" || head === "ts-node") ? /^-[a-z]*[epr]/i : null;
+  for (const t of toks) {
+    if (t === "--") break;
+    if (t.startsWith("-")) {
+      if (evalFlags.test(t) || (evalAttached && evalAttached.test(t)) ||
+          /^--(eval|print|require|import|loader|experimental-loader)=/i.test(t)) return "exec";
+      continue;                                                              // other interpreter flag
+    }
+    if (head === "node" && /^\/dev\/(stdin|fd)/i.test(t)) return "exec";      // node /dev/stdin
+    return null;                                                             // first non-flag = script -> safe
+  }
+  return null;
+}
+
 function evaluateBash(command, rules, riskyRx, cfg, parse = parseUnits) {
   // whole-pipeline exfil patterns first (de-obfuscated so `cur""l | sh` still matches)
   const pipe = firstMatch(rules.denyPipeline, stripObfuscation(command));
@@ -250,7 +314,8 @@ function evaluateBash(command, rules, riskyRx, cfg, parse = parseUnits) {
   const bump = (decision, id, note) => { if (rank[decision] > rank[worst]) { worst = decision; info = { id, note }; } };
 
   for (const unit of units) {
-    const u = stripObfuscation(stripGitGlobalFlags(unit)); // normalize git flags + de-obfuscate before matching
+    // normalize git global-flags, de-obfuscate quotes/backslashes, and unwrap `env VAR=val` prefixes
+    const u = stripEnvPrefix(stripObfuscation(stripGitGlobalFlags(unit)));
     // (0) deliberately force-allowed (user extraAllow / project context / promoted rule) —
     //     wins over deny. The settings.json deny-backstop still blocks catastrophic literals.
     const t = firstMatch(rules.forceAllow, u);
@@ -264,6 +329,9 @@ function evaluateBash(command, rules, riskyRx, cfg, parse = parseUnits) {
     // (3) sensitive — checked before the generic allow so "cat .env" asks, not allows
     const s = firstMatch(rules.sensitiveBash, u);
     if (s) { bump("ask", s.id, s.note); continue; }
+    // (3b) interpreter inline-eval / module-preload / remote / stdin — a deterministic ask (robust vs
+    //      quoting; only the interpreter's own flag region is inspected, so app flags don't trip it).
+    if (classifyInterpreter(u) === "exec") { bump("ask", "interp.exec", "interpreter runs inline / preloaded / remote code — confirm (remembered once approved)"); continue; }
     // (4) built-in safe allow
     if (firstMatch(rules.allowBash, u)) { bump("allow", "safe", "routine command"); continue; }
     // (5) nothing matched -> marginal

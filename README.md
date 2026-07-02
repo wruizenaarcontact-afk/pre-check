@@ -143,8 +143,9 @@ Writing back to `settings.json` is opt-in only (`promoteToSettings`, default off
   the 2026-07 audit, and known residuals. The parser is conservative (unparseable → marginal, never a
   silent allow), but a determined obfuscated payload could still slip past. Pair with OS sandboxing
   for untrusted input.
-- **Interpreters run what you feed them.** `node file.js`, `npm run x`, `deno run <url>` are allowed
-  (that's dev). Inline eval (`node -e`/`-p`) is routed to the veto, not silently allowed. Variable
+- **Interpreters run what you feed them.** `node file.js`, `npm run x` are allowed (that's dev). Inline
+  eval (`node -e`/`-p`), module preload (`-r`/`--require`/`--loader`), remote (`deno run <url>`) and stdin
+  execution are caught by a tokenizing classifier and **asked** (learned once you approve). Variable
   indirection (`X=rm; $X …`) degrades to ask/veto, not silent-allow.
 - **`trusting` widens the surface.** On the `trusting` preset, obfuscated true-unknowns can auto-allow
   (no veto). Use the default `balanced` when handling untrusted input.
