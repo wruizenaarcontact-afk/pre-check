@@ -1,13 +1,15 @@
 ---
 name: pre-check
-version: 0.2.0
+version: 0.3.0
 description: |
   Configurable auto-approve / safety gate for autonomous runs. A PreToolUse hook evaluates
-  every Bash command, file edit, and file read BEFORE it would prompt: routine dev work is
-  auto-approved, dangerous commands are DENIED (you reroute silently — no stalling), secret
-  reads and true unknowns ask the user. A denied command can be escalated: ask the user, then
-  a one-time grant unlocks it; repeated approvals offer to make it permanent. Per-category
-  gate/passthrough toggles, a keyless Haiku veto, a dry-run mode, and a private cache.
+  every Bash / PowerShell command, file edit, and file read BEFORE it would prompt: routine dev
+  work is auto-approved, dangerous commands are DENIED (you reroute silently — no stalling),
+  secret reads and true unknowns ask the user. A keyless learning cache remembers an approved
+  ask so it stops prompting; a risk dial (cautious | balanced | trusting) tunes how much is
+  decided for you. A denied command can be escalated: ask the user, then a one-time grant
+  unlocks it; repeated approvals offer to make it permanent. Per-category gate/passthrough
+  toggles, a keyless Haiku veto, a dry-run mode, a private cache, and a redacted feedback export.
   Invoke this skill to MANAGE the gate, to run the escalation flow after a hard deny, or to
   explain why something was blocked. Invoked with no specific request, show the command menu.
 allowed-tools:
@@ -33,6 +35,13 @@ specific request, run `node ~/.claude/skills/pre-check/bin/manage.mjs menu` and 
 
 Design intent: **minimize `ask`** so walk-away runs don't stall. Dangerous work is `deny` (you
 reroute and keep going), not `ask`. `ask` is reserved for genuine unknowns + raw secret reads.
+
+**Learning cache:** when you approve an `ask`, a PostToolUse hook records it and the gate
+auto-allows that exact command next time — so a given prompt only ever fires once (secret reads
+are the exception: never learned). The **risk dial** (`manage risk cautious|balanced|trusting`)
+tunes how true-unknowns are handled: `balanced` (default) asks, `trusting` allows, `cautious`
+asks more. **PowerShell** is gated the same as Bash (native cmdlets + cross-platform tools). The
+learning cache is a local lookup and is **never** sent to the Haiku veto.
 
 ## When you get a DENY — the escalation flow (important)
 
@@ -67,11 +76,13 @@ node .../bin/manage.mjs menu                            # the command menu (help
 node .../bin/manage.mjs status                          # state, categories, decision counts
 node .../bin/manage.mjs on            |  off            # master switch (off REMOVES the hooks)
 node .../bin/manage.mjs mode enforce  |  report         # report = dry-run: logs, enforces nothing
+node .../bin/manage.mjs risk cautious | balanced | trusting   # prompt appetite (default balanced)
 node .../bin/manage.mjs set web gate  |  set bash passthrough    # gate/ignore a category
 node .../bin/manage.mjs category add gmail "^mcp__claude_ai_Gmail__" gate   # custom category
 node .../bin/manage.mjs llm on  |  off  [model]         # keyless Haiku veto
 node .../bin/manage.mjs sync                            # calibrate to settings.json (see below)
 node .../bin/manage.mjs logs 30   |   rules   |   clear-cache
+node .../bin/manage.mjs export-feedback                 # redacted, shareable usage report (--raw --i-consent for raw)
 ```
 
 **on/off actually add/remove the hooks** — because the Haiku veto is a separate prompt hook that

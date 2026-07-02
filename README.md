@@ -16,15 +16,17 @@ cache, never your real permissions), and is fully reversible.
 
 ## How it works
 
-Two cooperating hooks, driven by one config file:
+Three cooperating hooks, driven by one config file:
 
 1. **Deterministic gate** (`bin/precheck.mjs`) — a dependency-free Node script that splits
-   a command into sub-commands and matches them against curated allow / deny / sensitive
-   rule lists. Instant, free, offline, no API key. Returns `allow` / `deny` / `ask`.
+   a Bash **or PowerShell** command into sub-commands and matches them against curated allow /
+   deny / sensitive rule lists. Instant, free, offline, no API key. Returns `allow` / `deny` / `ask`.
 2. **Keyless Haiku veto** (a `type:"prompt"` hook) — for *marginal, risk-scoped* commands
    only, a fast model judges safety using your **existing Claude Code session — no API
    key** (it spends subscription tokens). Because hooks merge most-restrictive-wins, it can
    only ever *veto* (tighten), never loosen.
+3. **Learning capture** (`bin/postcheck.mjs`, a PostToolUse hook) — records commands you
+   approved so the gate stops asking about them (see below). Local only; never calls the model.
 
 The deterministic deny-list plus a tiny **unbypassable `permissions.deny` backstop** (sudo,
 `rm -rf /`, `curl | sh`, …) are the real safety floor. The LLM is a bonus net.
@@ -68,14 +70,16 @@ node ~/.claude/skills/pre-check/bin/uninstall.mjs
 ```bash
 node ~/.claude/skills/pre-check/bin/manage.mjs off          # master switch (REMOVES the hooks; normal prompting)
 node ~/.claude/skills/pre-check/bin/manage.mjs mode report   # dry-run: log would-be decisions, enforce nothing
-node ~/.claude/skills/pre-check/bin/manage.mjs set web gate  # gate/ignore a category: bash|edit|read|web|mcp
+node ~/.claude/skills/pre-check/bin/manage.mjs risk trusting  # prompt appetite: cautious | balanced | trusting
+node ~/.claude/skills/pre-check/bin/manage.mjs set web gate  # gate/ignore a category: bash|powershell|edit|read|web|mcp
 node ~/.claude/skills/pre-check/bin/manage.mjs llm off       # disable the Haiku veto (pattern-only)
+node ~/.claude/skills/pre-check/bin/manage.mjs export-feedback  # redacted, shareable usage report
 node ~/.claude/skills/pre-check/bin/uninstall.mjs            # full removal
 ```
 
 `off` genuinely removes the hooks (the Haiku veto is a separate hook that can't read a flag), so it
 fully stops. Use `mode report` for a dry-run tuning day before trusting it. Default gated categories:
-`bash`, `edit`, `read` (secret reads only); `web`, `mcp` pass through (still prompt you).
+`bash`, `powershell`, `edit`, `read` (secret reads only); `web`, `mcp` pass through (still prompt you).
 Add your own category (tool-name regex → mode):
 
 ```bash
@@ -90,14 +94,39 @@ node ~/.claude/skills/pre-check/bin/manage.mjs category add gmail "^mcp__claude_
 | Privilege / system | `sudo`, `chmod 777 /`, `mkfs`, `dd of=/dev/…`, `shutdown` | deny |
 | Remote code / exfil | `curl … \| sh`, `wget … \| bash`, `… \| nc`, `eval $(curl …)`, `pip install http://…`, `npm i -g` | deny |
 | Dangerous-but-legit | `git reset --hard`, `--force-with-lease`, `chmod -R`, `ssh`/`scp`, `docker prune`, DB mutations/migrations | deny (escalate if needed) |
-| Secret reads | reading `.env`/`id_rsa`/`~/.aws` (Bash **or** the Read tool) | ask |
+| Secret reads | reading a *foreign* `.env`/`id_rsa`/`~/.aws` (Bash **or** the Read tool); your own in-project `.env` is allowed | ask |
+| PowerShell | `Remove-Item -Recurse -Force`, `Invoke-Expression`, `iwr … \| iex`, `Set-ExecutionPolicy`, `Stop-Computer` deny; `Get-*`, `Test-Path` allow | deny / allow |
 | Routine dev work | `ls`, `git commit`, `npm test`, `make`, `pytest`, build-dir `rm -rf node_modules`, in-project edits | allow |
 | Marginal + risky | `npx <unknown>`, an unusual network call | Haiku veto |
-| True unknown | an unrecognized command with no risk signal | ask |
+| True unknown | an unrecognized command with no risk signal | ask (learned after 1 approval) |
 
 Rules are data — tune them in `~/.claude/precheck/rules.user.json` (`extraAllow` /
 `extraDeny` / `extraSensitive`, or `disabled: ["rule.id"]`) and per-project in
 `.precheck-context.yaml` (see `examples/`). No code changes needed.
+
+## Fewer prompts: the learning cache + risk dial
+
+pre-check **learns**. When you approve an `ask`, a PostToolUse hook records it and the gate
+auto-allows that exact command next time — so any given prompt fires at most once. It's a local
+approval-count lookup (`~/.claude/precheck/state/learned.json`), **never** sent to the Haiku veto,
+so it adds zero token cost. Secret reads are the exception — never learned, they always re-ask.
+
+The **risk dial** (`manage risk <preset>`) sets how much is decided for you:
+
+| preset | true-unknown command | risk-scoped unknown | learns after |
+|---|---|---|---|
+| `cautious` | ask | ask | 3 approvals |
+| **`balanced`** (default) | ask | Haiku veto | 1 approval |
+| `trusting` | allow | Haiku veto | 1 approval |
+
+Deny rules, the `settings.json` deny backstop, and secret-read asks stay put in **every** preset.
+
+## Share what tripped you up
+
+`manage export-feedback` writes a **redacted** report (`~/.claude/precheck/export/`) of what the
+gate decided — decision counts and command *shapes* (first token + salted hash), never raw command
+text or file contents — so you can see which rules ask too often, or share it to help improve
+pre-check. `--raw --i-consent` includes real commands (review before sending).
 
 ## Calibration with your existing permissions
 
@@ -128,12 +157,13 @@ Writing back to `settings.json` is opt-in only (`promoteToSettings`, default off
 
 ## Files
 
-- `bin/precheck.mjs` — the gate engine · `bin/manage.mjs` — operator CLI ·
-  `bin/install.mjs` / `bin/uninstall.mjs` — settings.json wiring
+- `bin/precheck.mjs` — the gate engine · `bin/postcheck.mjs` — PostToolUse learning capture ·
+  `bin/manage.mjs` — operator CLI · `bin/install.mjs` / `bin/uninstall.mjs` — settings.json wiring
 - `rules/rules.default.json` — the shipped rule library (per-rule `note`s) ·
   `config.default.json` — documented defaults · `prompts/veto.prompt.txt` — the Haiku prompt
-- User state (never committed): `~/.claude/precheck/` (config, cache, logs, synced rules, grants)
+- User state (never committed): `~/.claude/precheck/` (config, cache, logs, synced rules, grants, learned)
 - `bin/_selftest.mjs` (offline rule tests) and `bin/_e2e.mjs` (runtime tests: grants, report mode,
-  read gating, escalation) — run both with `node bin/_selftest.mjs && node bin/_e2e.mjs`
+  read gating, escalation, learning cache, risk dial, PowerShell, export) — run both with
+  `node bin/_selftest.mjs && node bin/_e2e.mjs`
 
 MIT licensed. See `SKILL.md` for the agent-facing operator manual.
