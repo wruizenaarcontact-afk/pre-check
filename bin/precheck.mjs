@@ -242,7 +242,8 @@ function stripObfuscation(s) {
 // Strip a leading `env VAR=val ...` wrapper so the wrapped command is re-classified (env FOO=bar
 // node app.js -> node app.js; env X=y rm -rf / -> rm -rf /). Bare `env` / `env -i` are untouched.
 function stripEnvPrefix(unit) {
-  return unit.replace(/^(\s*)env\s+(?:[A-Za-z_]\w*=\S*\s+)+/i, "$1");
+  // env [flags] [VAR=val ...] <cmd>  -> <cmd>   (bare `env` / `env -i` with no trailing cmd untouched)
+  return unit.replace(/^(\s*)env\b(?:\s+(?:-\S+|[A-Za-z_]\w*=\S*))*\s+(?=\S)/i, "$1");
 }
 
 // Shell-ish tokenizer that strips surrounding quotes from each token (quote-aware). Used to inspect

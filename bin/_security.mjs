@@ -74,6 +74,8 @@ must("bun x local", `bun x ./x.ts`, ["ask"]);
 must("nodemon --exec", `nodemon --exec 'node -r ./evil.js' app.js`, ["ask"]);
 must("env NODE_OPTIONS wrapper", `env NODE_OPTIONS='--require ./evil.js' node app.js`, NOT_SILENT);
 must("env VAR node -r (re-classified)", `env FOO=bar node -r ./evil.js app.js`, ["ask"]);
+must("env -i wrapper node -e", `env -i node -e 'require("fs")'`, ["ask"]);
+must("env -S wrapper node -e", `env -S node -e 'x'`, ["ask"]);
 
 console.log("── F1b regression: benign node flags still allow ──");
 must("node script", `node server.js`, ALLOW);
@@ -95,6 +97,7 @@ must("bun run script", `bun run build`, ALLOW);
 must("env VAR benign node", `env NODE_ENV=production node app.js`, ALLOW);
 must("env VAR benign npm", `env DEBUG=1 npm test`, ALLOW);
 must("env bare", `env`, ALLOW);
+must("env -i benign node", `env -i node app.js`, ALLOW);
 
 console.log("── F4: fork bomb is denied (was dead code) ──");
 must("fork bomb", `:(){ :|:& };:`, DENY);
