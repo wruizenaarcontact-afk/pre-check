@@ -58,7 +58,8 @@
     "Bash(*DROP *)", "Bash(*DELETE FROM*)", "Bash(*chmod *)", "Bash(*chown *)",
     "Bash(*ssh *)", "Bash(*scp *)", "Bash(*> /*)", "Bash(bash *)", "Bash(sh *)",
     "Bash(zsh *)", "Bash(*| sh*)", "Bash(*|sh*)", "Bash(make install*)",
-    "Bash(go install*)", "Bash(*chmod 777*)"
+    "Bash(go install*)", "Bash(*chmod 777*)",
+    "Bash(node -e*)", "Bash(node -p*)", "Bash(node --print*)", "Bash(ts-node -e*)", "Bash(tsx -e*)"
   ],
 
   // Private decision cache for DETERMINISTIC verdicts (deny/ask/allow from rules).

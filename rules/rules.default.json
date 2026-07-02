@@ -9,12 +9,13 @@
   ],
 
   "denyPipeline": [
-    { "id": "pipe.curl-to-shell", "re": "\\b(curl|wget|fetch)\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z|da|fi|c)?sh\\b", "note": "pipes a network download straight into a shell (remote code execution)" },
-    { "id": "pipe.url-to-shell", "re": "https?://[^|]*\\|\\s*(sudo\\s+)?(ba|z|da)?sh\\b", "note": "pipes a URL's contents into a shell (remote code execution)" },
-    { "id": "pipe.base64-to-shell", "re": "base64\\s+-{1,2}d(ecode)?\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z|da)?sh\\b", "note": "decodes base64 and pipes it into a shell (obfuscated code execution)" },
+    { "id": "pipe.curl-to-shell", "re": "\\b(curl|wget|fetch)\\b[^|]*\\|\\s*(sudo\\s+)?[\"']?(ba|z|da|fi|c)?sh\\b", "note": "pipes a network download straight into a shell (remote code execution)" },
+    { "id": "pipe.url-to-shell", "re": "https?://[^|]*\\|\\s*(sudo\\s+)?[\"']?(ba|z|da)?sh\\b", "note": "pipes a URL's contents into a shell (remote code execution)" },
+    { "id": "pipe.base64-to-shell", "re": "base64\\s+-{1,2}d(ecode)?\\b[^|]*\\|\\s*(sudo\\s+)?[\"']?(ba|z|da)?sh\\b", "note": "decodes base64 and pipes it into a shell (obfuscated code execution)" },
     { "id": "pipe.nc-exfil", "re": "\\|\\s*nc\\b|\\bnc(at)?\\b[^|;&]*\\s-\\w*e\\b", "note": "netcat reverse shell / data exfiltration" },
     { "id": "pipe.eval-network", "re": "\\beval\\b[^;]*\\$\\(\\s*(curl|wget|fetch|http)", "note": "eval of network output (remote code execution)" },
-    { "id": "pipe.ps-iex", "re": "\\|\\s*(iex|Invoke-Expression)\\b", "note": "pipes output into PowerShell code execution" }
+    { "id": "pipe.ps-iex", "re": "\\|\\s*(iex|Invoke-Expression)\\b", "note": "pipes output into PowerShell code execution" },
+    { "id": "sys.forkbomb", "re": ":\\s*\\(\\s*\\)\\s*\\{[^}]*:\\s*\\|\\s*:[^}]*\\}", "note": "fork bomb (exhausts system resources)" }
   ],
 
   "denyBash": [
@@ -22,7 +23,6 @@
     { "id": "rm.no-preserve-root", "re": "--no-preserve-root", "note": "removes the safety guard that stops rm from deleting /" },
     { "id": "disk.mkfs", "re": "\\bmkfs(\\.\\w+)?\\b", "note": "formats a filesystem (destroys all data on the target)" },
     { "id": "disk.dd-device", "re": "\\bdd\\b[^\\n]*\\bof=/dev/", "note": "writes raw bytes to a device (can wipe a disk)" },
-    { "id": "sys.forkbomb", "re": ":\\s*\\(\\s*\\)\\s*\\{[^}]*:\\s*\\|\\s*:[^}]*\\}", "note": "fork bomb (exhausts system resources)" },
     { "id": "sys.shutdown", "re": "\\b(shutdown|reboot|halt|poweroff|init\\s+0|init\\s+6)\\b", "note": "powers off or reboots the machine" },
     { "id": "perm.chmod-777-root", "re": "\\bchmod\\s+-?R?\\s*0?777\\s+/(\\s|$)", "note": "makes the root filesystem world-writable" },
     { "id": "git.push-force", "re": "\\bgit\\s+push\\b[^|;&]*(--force(?!-with-lease)\\b|\\s-f\\b)", "note": "force-push rewrites remote history; collaborators can lose work (use --force-with-lease)" },
@@ -61,7 +61,7 @@
     { "id": "safe.git-write", "re": "^\\s*git\\s+(add|commit|switch|restore\\s+--staged|merge\\s+--ff-only|pull(\\s+--ff-only)?|stash(\\s+(push|pop|apply|save))?|tag\\s+[\\w./-]|cherry-pick|rebase\\s+--(continue|abort|skip)|init|fetch|checkout\\s+-b\\b|checkout\\s+-{0,2}[\\w./-]+$|branch\\s+[\\w./-]+$)\\b", "note": "non-destructive git write (add/commit/branch/switch/stash)" },
     { "id": "safe.gh-read", "re": "^\\s*gh\\s+(auth\\s+status|(repo|pr|issue|release|run|workflow|gist|label|cache)\\s+(list|view|status))\\b", "note": "read-only gh inspection (auth status, repo/pr/issue/release view/list)" },
     { "id": "safe.node-pkg", "re": "^\\s*(npm|pnpm|yarn|bun)\\s+(run|test|start|build|lint|ci|install|i|add|format|fmt|typecheck|tsc|prettier|eslint|vitest|jest|dev|preview|outdated|list|ls|why|audit(?!\\s+fix\\s+--force))\\b", "note": "local Node package scripts / install (global -g is denied separately)" },
-    { "id": "safe.node-run", "re": "^\\s*(node|deno\\s+run|ts-node|tsx|nodemon)\\b", "note": "runs a local Node/TS script" },
+    { "id": "safe.node-run", "re": "^\\s*(node|deno\\s+run|ts-node|tsx|nodemon)\\b(?![^\\n]*(\\s-e\\b|\\s--eval\\b|\\s-p\\b|\\s--print\\b))", "note": "runs a local Node/TS script (inline -e/-p eval is routed to the veto instead)" },
     { "id": "safe.python", "re": "^\\s*(python3?|py|uv|pipenv\\s+run|poetry\\s+run|conda\\s+run)\\s+(-m\\s+(pytest|venv|pip|unittest|http\\.server|json\\.tool|build|black|ruff|mypy|flask|django|uvicorn)|[\\w./-]+\\.py)\\b", "note": "runs a local Python script / module" },
     { "id": "safe.py-test", "re": "^\\s*(pytest|tox|nox|ruff|black|mypy|flake8|isort)\\b", "note": "Python test / lint / format tooling" },
     { "id": "safe.build-tools", "re": "^\\s*(make(?!\\s+install)|cmake|ninja|bazel\\s+(build|test)|cargo\\s+(build|test|run|check|clippy|fmt|doc|bench|tree|add)|go\\s+(build|test|run|vet|fmt|mod\\s+(tidy|download)|generate)|dotnet\\s+(build|test|run|restore|format)|gradle|gradlew|mvn|rake|bundle\\s+(install|exec)|swift\\s+(build|test|run))\\b", "note": "compiler / build / test toolchain" },

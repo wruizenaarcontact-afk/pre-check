@@ -43,6 +43,15 @@ if (cfg.categories && !cfg.categories.powershell) {
   console.log("  - added PowerShell gate category (upgrade)");
 }
 
+// 2d) migration: route inline interpreter eval (node -e / -p, ts-node/tsx -e) through the Haiku
+// veto instead of a silent allow — add the globs to riskyScope for installs that predate them.
+const evalGlobs = ["Bash(node -e*)", "Bash(node -p*)", "Bash(node --print*)", "Bash(ts-node -e*)", "Bash(tsx -e*)"];
+if (Array.isArray(cfg.riskyScope) && !cfg.riskyScope.includes("Bash(node -e*)")) {
+  cfg.riskyScope = [...cfg.riskyScope, ...evalGlobs.filter((g) => !cfg.riskyScope.includes(g))];
+  writeJson(PATHS.config, cfg);
+  console.log("  - added inline-eval (node -e/-p, ts-node/tsx -e) to riskyScope (upgrade)");
+}
+
 // 3) settings.json merge
 let settings;
 try { settings = loadSettings(); }

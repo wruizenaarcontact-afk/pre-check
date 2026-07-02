@@ -230,9 +230,18 @@ function stripGitGlobalFlags(unit) {
   return unit.replace(/^(\s*git\s+)((?:-C\s+\S+|-c\s+\S+=\S+)\s+)+/i, "$1");
 }
 
+// Un-obfuscate a command for MATCHING ONLY (never for execution): remove word-internal quote
+// splitting (s""udo, su'd'o) and backslash-escaped word starts (\sudo) so trivial evasions still
+// hit the deny rules. Scoped to word-internal quotes so legit quoted args (around spaces) are untouched.
+function stripObfuscation(s) {
+  return String(s)
+    .replace(/(?<=\w)['"]+(?=\w)/g, "") // s""udo, su'd'o -> sudo
+    .replace(/\\(?=[A-Za-z])/g, "");     // \sudo -> sudo
+}
+
 function evaluateBash(command, rules, riskyRx, cfg, parse = parseUnits) {
-  // whole-pipeline exfil patterns first
-  const pipe = firstMatch(rules.denyPipeline, command);
+  // whole-pipeline exfil patterns first (de-obfuscated so `cur""l | sh` still matches)
+  const pipe = firstMatch(rules.denyPipeline, stripObfuscation(command));
   if (pipe) return { decision: "deny", id: pipe.id, note: pipe.note };
 
   const { units, flags } = parse(command);
@@ -241,7 +250,7 @@ function evaluateBash(command, rules, riskyRx, cfg, parse = parseUnits) {
   const bump = (decision, id, note) => { if (rank[decision] > rank[worst]) { worst = decision; info = { id, note }; } };
 
   for (const unit of units) {
-    const u = stripGitGlobalFlags(unit); // normalize `git -C/-c` global flags before matching
+    const u = stripObfuscation(stripGitGlobalFlags(unit)); // normalize git flags + de-obfuscate before matching
     // (0) deliberately force-allowed (user extraAllow / project context / promoted rule) —
     //     wins over deny. The settings.json deny-backstop still blocks catastrophic literals.
     const t = firstMatch(rules.forceAllow, u);

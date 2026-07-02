@@ -139,10 +139,16 @@ Writing back to `settings.json` is opt-in only (`promoteToSettings`, default off
 
 ## Limitations & honest caveats
 
-- **Not a sandbox.** It's a heuristic filter. The command parser is conservative — anything
-  it can't parse becomes *marginal* (veto or ask), never a silent allow — but a determined,
-  obfuscated payload could still slip past the patterns. The `permissions.deny` backstop and
-  the Haiku veto are extra layers, not guarantees.
+- **Not a sandbox.** It's a heuristic filter — see [SECURITY.md](SECURITY.md) for the threat model,
+  the 2026-07 audit, and known residuals. The parser is conservative (unparseable → marginal, never a
+  silent allow), but a determined obfuscated payload could still slip past. Pair with OS sandboxing
+  for untrusted input.
+- **Interpreters run what you feed them.** `node file.js`, `npm run x`, `deno run <url>` are allowed
+  (that's dev). Inline eval (`node -e`/`-p`) is routed to the veto, not silently allowed. Variable
+  indirection (`X=rm; $X …`) degrades to ask/veto, not silent-allow.
+- **`trusting` widens the surface.** On the `trusting` preset, obfuscated true-unknowns can auto-allow
+  (no veto). Use the default `balanced` when handling untrusted input.
+- **MCP / Web are passthrough** — external sends/deletes aren't gated (enable with `set mcp gate`).
 - **Hooks may fail-open on timeout** — which is why the unbypassable settings `deny` backstop
   exists for the catastrophic literals.
 - **The Haiku veto costs subscription tokens** and adds ~1–3s on risk-scoped commands only
@@ -162,8 +168,10 @@ Writing back to `settings.json` is opt-in only (`promoteToSettings`, default off
 - `rules/rules.default.json` — the shipped rule library (per-rule `note`s) ·
   `config.default.json` — documented defaults · `prompts/veto.prompt.txt` — the Haiku prompt
 - User state (never committed): `~/.claude/precheck/` (config, cache, logs, synced rules, grants, learned)
-- `bin/_selftest.mjs` (offline rule tests) and `bin/_e2e.mjs` (runtime tests: grants, report mode,
-  read gating, escalation, learning cache, risk dial, PowerShell, export) — run both with
-  `node bin/_selftest.mjs && node bin/_e2e.mjs`
+- `bin/_selftest.mjs` (offline rule tests), `bin/_e2e.mjs` (runtime tests: grants, report mode,
+  read gating, escalation, learning cache, risk dial, PowerShell, export), and `bin/_security.mjs`
+  (evasion / interpreter regressions) — run with
+  `node bin/_selftest.mjs && node bin/_e2e.mjs && node bin/_security.mjs`
+- `SECURITY.md` — threat model, 2026-07 audit, and known residuals.
 
-MIT licensed. See `SKILL.md` for the agent-facing operator manual.
+MIT licensed. See `SKILL.md` for the agent-facing operator manual, `SECURITY.md` for the threat model.
