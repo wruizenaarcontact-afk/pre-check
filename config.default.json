@@ -21,6 +21,7 @@
   // matcher is reconciled (manage.mjs does this automatically).
   "categories": {
     "bash": { "match": "^Bash$",                      "mode": "gate" },
+    "powershell": { "match": "^PowerShell$",           "mode": "gate" },
     "edit": { "match": "^(Edit|Write|NotebookEdit)$",  "mode": "gate" },
     "read": { "match": "^Read$",                        "mode": "gate" },
     "web":  { "match": "^(WebFetch|WebSearch)$",        "mode": "passthrough" },

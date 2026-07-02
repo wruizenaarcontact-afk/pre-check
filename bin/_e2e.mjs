@@ -22,6 +22,7 @@ function precheck(payload) {
 }
 const bash = (command) => precheck({ tool_name: "Bash", tool_input: { command }, cwd: "/c/p" });
 const read = (file_path) => precheck({ tool_name: "Read", tool_input: { file_path } });
+const psh = (command) => precheck({ tool_name: "PowerShell", tool_input: { command }, cwd: "/c/p" });
 function manage(...args) { return execFileSync(NODE, [path.join(BIN, "manage.mjs"), ...args], { encoding: "utf8" }); }
 function postcheck(payload) {
   try { execFileSync(NODE, [path.join(BIN, "postcheck.mjs")], { input: JSON.stringify(payload), encoding: "utf8", env: { ...process.env, PRECHECK_TEST: "1" } }); return true; }
@@ -99,6 +100,12 @@ try {
 } finally {
   fs.writeFileSync(PATHS.config, cfgBefore); // restore exact config
 }
+
+console.log("── PowerShell gating (via precheck) ──");
+check("PS Get-ChildItem -> allow", psh("Get-ChildItem").permissionDecision === "allow", psh("Get-ChildItem").permissionDecision);
+check("PS Remove-Item -Recurse -Force -> deny", psh("Remove-Item C:\\t -Recurse -Force").permissionDecision === "deny", psh("Remove-Item C:\\t -Recurse -Force").permissionDecision);
+check("PS Invoke-Expression -> deny", psh("Invoke-Expression $x").permissionDecision === "deny", psh("Invoke-Expression $x").permissionDecision);
+check("PS Get-Content .env -> ask", psh("Get-Content .env").permissionDecision === "ask", psh("Get-Content .env").permissionDecision);
 
 console.log("── feedback export (redaction + totals) ──");
 const logBefore = fs.existsSync(PATHS.log) ? fs.readFileSync(PATHS.log, "utf8") : null;

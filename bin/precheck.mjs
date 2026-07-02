@@ -23,6 +23,7 @@ const DEFAULT_CONFIG = {
   mode: "enforce", // "enforce" | "report" (report = dry-run: log would-be decisions, enforce nothing)
   categories: {
     bash: { match: "^Bash$", mode: "gate" },
+    powershell: { match: "^PowerShell$", mode: "gate" },
     edit: { match: "^(Edit|Write|NotebookEdit)$", mode: "gate" },
     read: { match: "^Read$", mode: "gate" },
     web: { match: "^(WebFetch|WebSearch)$", mode: "passthrough" },
@@ -87,7 +88,7 @@ function loadRules(opts = {}) {
   }
   // compile
   const compiled = {};
-  for (const key of ["forceAllow", "syncedTrust", "denyPipeline", "denyBash", "allowBash", "sensitiveBash", "denyPath", "sensitivePath", "sensitiveRead", "denyMcp", "sensitiveMcp", "allowMcp"]) {
+  for (const key of ["forceAllow", "syncedTrust", "denyPipeline", "denyBash", "allowBash", "sensitiveBash", "denyPath", "sensitivePath", "sensitiveRead", "denyMcp", "sensitiveMcp", "allowMcp", "denyPs", "sensitivePs", "allowPs"]) {
     compiled[key] = (rules[key] || []).filter((r) => !r.disabled).map((r) => ({ ...r, rx: safeRe(r.re) })).filter((r) => r.rx);
   }
   compiled.safeBuildDirs = rules.safeBuildDirs || [];
@@ -109,7 +110,7 @@ function mergeRuleSet(base, extra) {
     if (Array.isArray(extra[src])) { out[dst] = (out[dst] || []).concat(extra[src]); }
   }
   // also let extra files carry the same array keys directly (appended)
-  for (const key of ["forceAllow", "syncedTrust", "denyPipeline", "denyBash", "allowBash", "sensitiveBash", "denyPath", "sensitivePath", "sensitiveRead", "denyMcp", "sensitiveMcp", "allowMcp"]) {
+  for (const key of ["forceAllow", "syncedTrust", "denyPipeline", "denyBash", "allowBash", "sensitiveBash", "denyPath", "sensitivePath", "sensitiveRead", "denyMcp", "sensitiveMcp", "allowMcp", "denyPs", "sensitivePs", "allowPs"]) {
     if (Array.isArray(extra[key])) out[key] = (out[key] || []).concat(extra[key].filter((r) => !r.disabled));
   }
   if (Array.isArray(extra.safeBuildDirs)) out.safeBuildDirs = (out.safeBuildDirs || []).concat(extra.safeBuildDirs);
@@ -167,6 +168,32 @@ function parseUnits(cmd) {
   return { units, flags };
 }
 
+// ── PowerShell sub-command parser ────────────────────────────────────────────
+// PS statement/pipeline separators: ; | newline, and PS7 && ||. Quote/paren/brace aware.
+function parseUnitsPs(cmd) {
+  const flags = { substitution: false, obfuscated: false, unbalanced: false };
+  const units = [];
+  let buf = "", inS = false, q = "", depth = 0;
+  const push = () => { const t = buf.trim(); if (t) units.push(t); buf = ""; };
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i], n = cmd[i + 1];
+    if (inS) { buf += c; if (c === q) inS = false; continue; }
+    if (c === '"' || c === "'") { inS = true; q = c; buf += c; continue; }
+    if (c === "(" || c === "{" || c === "[") { depth++; buf += c; continue; }
+    if (c === ")" || c === "}" || c === "]") { depth = Math.max(0, depth - 1); buf += c; continue; }
+    if (depth === 0) {
+      if ((c === "&" && n === "&") || (c === "|" && n === "|")) { push(); i++; continue; }
+      if (c === ";" || c === "\n" || c === "|") { push(); continue; }
+    }
+    buf += c;
+  }
+  push();
+  if (inS || depth !== 0) flags.unbalanced = true;
+  if (/\b(iex|invoke-expression)\b/i.test(cmd)) flags.obfuscated = true;
+  if (units.length === 0) units.push(cmd.trim());
+  return { units, flags };
+}
+
 // ── rm classifier (recursive deletes) ───────────────────────────────────────
 function classifyRm(unit, safeBuildDirs) {
   if (!/\brm\b/i.test(unit)) return null;
@@ -203,12 +230,12 @@ function stripGitGlobalFlags(unit) {
   return unit.replace(/^(\s*git\s+)((?:-C\s+\S+|-c\s+\S+=\S+)\s+)+/i, "$1");
 }
 
-function evaluateBash(command, rules, riskyRx, cfg) {
+function evaluateBash(command, rules, riskyRx, cfg, parse = parseUnits) {
   // whole-pipeline exfil patterns first
   const pipe = firstMatch(rules.denyPipeline, command);
   if (pipe) return { decision: "deny", id: pipe.id, note: pipe.note };
 
-  const { units, flags } = parseUnits(command);
+  const { units, flags } = parse(command);
   let worst = "allow", info = { id: "safe", note: "routine command" };
   const rank = { deny: 3, ask: 2, marginal: 1, allow: 0 };
   const bump = (decision, id, note) => { if (rank[decision] > rank[worst]) { worst = decision; info = { id, note }; } };
@@ -252,6 +279,19 @@ function evaluateBash(command, rules, riskyRx, cfg) {
   if ((dp.marginalWhenLlmOff || "ask") === "allow")
     return { decision: "allow", id: "marginal.trusted", note: "unrecognized command auto-allowed by the 'trusting' risk preset" };
   return { decision: "ask", id: "marginal", note: "unrecognized command — please confirm" };
+}
+
+// PowerShell: reuse the bash pipeline but layer PS-native rules ON TOP of the cross-platform
+// ones (so git/gh/npm/node still match) and split with PS semantics. `rm` is a PS alias for
+// Remove-Item and is caught by the shared rm classifier.
+function evaluatePowershell(command, rules, riskyRx, cfg) {
+  const merged = {
+    ...rules,
+    denyBash: [...(rules.denyPs || []), ...rules.denyBash],
+    sensitiveBash: [...(rules.sensitivePs || []), ...rules.sensitiveBash],
+    allowBash: [...(rules.allowPs || []), ...rules.allowBash],
+  };
+  return evaluateBash(command, merged, riskyRx, cfg, parseUnitsPs);
 }
 
 function normPath(p, cwd) {
@@ -445,12 +485,12 @@ function main() {
 
   // resolve the target string per category
   let target = "";
-  if (cat.name === "bash") target = (ti.command || "").trim();
+  if (cat.name === "bash" || cat.name === "powershell") target = (ti.command || "").trim();
   else if (cat.name === "edit") target = ti.file_path || ti.notebook_path || "";
   else if (cat.name === "read") target = ti.file_path || ti.path || ti.pattern || "";
   else if (cat.name === "mcp") target = toolName;
   else target = ti.url || ti.query || JSON.stringify(ti).slice(0, 200);
-  if (cat.name === "bash" && !target) return emitNoOpinion();
+  if ((cat.name === "bash" || cat.name === "powershell") && !target) return emitNoOpinion();
 
   // cache scope: by project when configured OR when a project context file is present.
   const scopeRoot = (cfg.cache?.scope === "per-project" || projCtx) ? root : "";
@@ -463,6 +503,7 @@ function main() {
   else {
     try {
       if (cat.name === "bash") result = evaluateBash(target, rules, riskyRx, cfg);
+      else if (cat.name === "powershell") result = evaluatePowershell(target, rules, riskyRx, cfg);
       else if (cat.name === "edit") result = evaluatePath(target, cwd, root, rules, "edit");
       else if (cat.name === "read") result = evaluatePath(target, cwd, root, rules, "read");
       else if (cat.name === "mcp") result = evaluateMcp(toolName, rules);
@@ -474,8 +515,8 @@ function main() {
     if (!result.viaLlmNet) cachePut(key, { decision: result.decision, id: result.id, note: result.note }, cfg);
   }
 
-  // a user-approved one-time grant overrides a bash deny (even a cached one), once.
-  if (cat.name === "bash" && result.decision === "deny" && consumeGrant(target)) {
+  // a user-approved one-time grant overrides a bash/PowerShell deny (even a cached one), once.
+  if ((cat.name === "bash" || cat.name === "powershell") && result.decision === "deny" && consumeGrant(target)) {
     result = { decision: "allow", id: "grant.once", note: "one-time exception approved by the user" };
     cacheHit = false;
   }
@@ -508,8 +549,9 @@ function snippet(t, cfg) {
 function isoNow() { return new Date(readClock()).toISOString(); }
 
 export {
-  parseUnits, classifyRm, evaluateBash, evaluatePath, evaluateMcp, loadRules, categorize,
-  loadConfig, findRoot, loadProjectContext, applyProjectContext, isoNow, readStdin, DEFAULT_CONFIG,
+  parseUnits, parseUnitsPs, classifyRm, evaluateBash, evaluatePowershell, evaluatePath, evaluateMcp,
+  loadRules, categorize, loadConfig, findRoot, loadProjectContext, applyProjectContext, isoNow,
+  readStdin, DEFAULT_CONFIG,
 };
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

@@ -13,7 +13,8 @@
     { "id": "pipe.url-to-shell", "re": "https?://[^|]*\\|\\s*(sudo\\s+)?(ba|z|da)?sh\\b", "note": "pipes a URL's contents into a shell (remote code execution)" },
     { "id": "pipe.base64-to-shell", "re": "base64\\s+-{1,2}d(ecode)?\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z|da)?sh\\b", "note": "decodes base64 and pipes it into a shell (obfuscated code execution)" },
     { "id": "pipe.nc-exfil", "re": "\\|\\s*nc\\b|\\bnc(at)?\\b[^|;&]*\\s-\\w*e\\b", "note": "netcat reverse shell / data exfiltration" },
-    { "id": "pipe.eval-network", "re": "\\beval\\b[^;]*\\$\\(\\s*(curl|wget|fetch|http)", "note": "eval of network output (remote code execution)" }
+    { "id": "pipe.eval-network", "re": "\\beval\\b[^;]*\\$\\(\\s*(curl|wget|fetch|http)", "note": "eval of network output (remote code execution)" },
+    { "id": "pipe.ps-iex", "re": "\\|\\s*(iex|Invoke-Expression)\\b", "note": "pipes output into PowerShell code execution" }
   ],
 
   "denyBash": [
@@ -104,5 +105,28 @@
 
   "allowMcp": [
     { "id": "mcp.read", "re": "__(list|search|get|read|fetch|find|query|view|show|describe|count|suggest|download)", "note": "read-only MCP tool" }
+  ],
+
+  "_comment_ps": "PowerShell-native rules. Applied (in addition to the cross-platform bash rules, so git/gh/npm/node still match) when the PowerShell tool is gated. `rm` is a PS alias for Remove-Item and is handled by the shared rm classifier.",
+
+  "denyPs": [
+    { "id": "ps.remove-recurse-force", "re": "\\b(Remove-Item|ri)\\b.*(-Recurse.*-Force|-Force.*-Recurse)", "note": "recursive force delete (Remove-Item -Recurse -Force)" },
+    { "id": "ps.rd-s", "re": "\\b(rd|rmdir)\\b[^|;]*\\s(/s|/q)\\b", "note": "recursive directory delete (rd /s)" },
+    { "id": "ps.remove-system", "re": "\\b(Remove-Item|ri|rd|rmdir|del|erase)\\b[^|;]*(\\$env:SystemRoot|\\$env:windir|[Cc]:\\\\Windows|[Cc]:\\\\Program)", "note": "deletes a Windows system / program path" },
+    { "id": "ps.invoke-expression", "re": "\\b(Invoke-Expression|iex)\\b", "note": "executes a string as code (Invoke-Expression)" },
+    { "id": "ps.exec-policy", "re": "\\bSet-ExecutionPolicy\\b[^|;]*(Bypass|Unrestricted)\\b", "note": "weakens the PowerShell execution policy" },
+    { "id": "ps.disk", "re": "\\b(Format-Volume|Clear-Disk|Remove-Partition|Initialize-Disk|Format-Disk)\\b", "note": "formats / erases a disk or partition" },
+    { "id": "ps.power", "re": "\\b(Stop-Computer|Restart-Computer)\\b", "note": "powers off or reboots the machine" },
+    { "id": "ps.remote", "re": "\\b(Enter-PSSession|Invoke-Command)\\b[^|;]*-ComputerName\\b", "note": "runs commands on a remote machine" }
+  ],
+
+  "sensitivePs": [
+    { "id": "ps.cred-read", "re": "\\b(Get-Content|gc|cat|type|Get-Item|gi|Select-String|sls|Copy-Item)\\b[^|;]*(\\.env\\b|\\.pem\\b|\\.key\\b|id_rsa|id_ed25519|\\.ssh|\\.aws|\\.npmrc|\\.git-credentials|credential|secret)", "note": "reads a secret / credential file" },
+    { "id": "ps.get-credential", "re": "\\b(Get-Credential|Export-Clixml|ConvertFrom-SecureString|Get-Secret)\\b", "note": "handles stored credentials / secrets" }
+  ],
+
+  "allowPs": [
+    { "id": "ps.read", "re": "^\\s*(Get-\\w+|Test-Path|Test-Connection|Select-\\w+|Measure-\\w+|Where-Object|ForEach-Object|Sort-Object|Group-Object|Format-List|Format-Table|Format-Wide|Out-String|Out-Host|Out-Null|Out-Default|Write-\\w+|Compare-Object|Resolve-Path|Split-Path|Join-Path|Read-Host|Set-Location|cd|Push-Location|Pop-Location|gci|ls|dir|pwd|Get-Location|Get-Command|Get-Help|Get-Member)\\b", "note": "read-only / navigation PowerShell cmdlet" },
+    { "id": "ps.scaffold", "re": "^\\s*(New-Item|Copy-Item|cp|copy|Move-Item|mv|move|Rename-Item|Set-Content|Add-Content|New-Object|Out-File|mkdir|md|ConvertTo-\\w+|ConvertFrom-\\w+|Import-Csv|Export-Csv|Tee-Object)\\b", "note": "ordinary file scaffolding / data cmdlet" }
   ]
 }

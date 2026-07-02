@@ -13,7 +13,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PATHS, learnSig, readJson, ensureDir, globToRegex } from "./lib.mjs";
 import {
-  loadConfig, loadRules, categorize, evaluateBash, evaluatePath,
+  loadConfig, loadRules, categorize, evaluateBash, evaluatePowershell, evaluatePath,
   findRoot, loadProjectContext, applyProjectContext, isoNow, readStdin,
 } from "./precheck.mjs";
 
@@ -46,7 +46,7 @@ function main() {
 
   const cat = categorize(input.tool_name || "", cfg.categories || {});
   if (!cat || cat.mode === "passthrough") return;
-  if (!["bash", "edit", "read"].includes(cat.name)) return; // only learnable categories
+  if (!["bash", "powershell", "edit", "read"].includes(cat.name)) return; // only learnable categories
 
   let rules;
   try { rules = loadRules(); } catch { return; }
@@ -57,7 +57,7 @@ function main() {
   try { applyProjectContext(rules, loadProjectContext(root)); } catch { /* best-effort */ }
 
   let target = "";
-  if (cat.name === "bash") target = (ti.command || "").trim();
+  if (cat.name === "bash" || cat.name === "powershell") target = (ti.command || "").trim();
   else if (cat.name === "edit") target = ti.file_path || ti.notebook_path || "";
   else target = ti.file_path || ti.path || ti.pattern || "";
   if (!target) return;
@@ -67,6 +67,7 @@ function main() {
   let verdict;
   try {
     if (cat.name === "bash") verdict = evaluateBash(target, rules, riskyRx, cfg);
+    else if (cat.name === "powershell") verdict = evaluatePowershell(target, rules, riskyRx, cfg);
     else if (cat.name === "edit") verdict = evaluatePath(target, cwd, root, rules, "edit");
     else verdict = evaluatePath(target, cwd, root, rules, "read");
   } catch { return; }

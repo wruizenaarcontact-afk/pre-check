@@ -14,6 +14,9 @@ export const DENY_BACKSTOP = [
   "Bash(*--no-preserve-root*)", "Bash(mkfs *)", "Bash(dd of=/dev/*)",
   "Bash(curl * | sh)", "Bash(curl * | bash)", "Bash(wget * | sh)", "Bash(wget * | bash)",
   "Bash(* | nc *)", "Bash(shutdown *)", "Bash(reboot *)",
+  "PowerShell(*-Recurse*-Force*)", "PowerShell(*-Force*-Recurse*)", "PowerShell(*Invoke-Expression*)",
+  "PowerShell(*| iex*)", "PowerShell(*|iex*)", "PowerShell(Set-ExecutionPolicy *Bypass*)",
+  "PowerShell(Format-Volume *)", "PowerShell(Stop-Computer*)", "PowerShell(Restart-Computer*)",
 ];
 
 export function loadSettings() {
@@ -95,6 +98,17 @@ export function syncHooks(settings, cfg) {
     if (cfg.llm.model) hook.model = cfg.llm.model;
     if (ifScope) hook.if = ifScope;
     settings.hooks.PreToolUse.push({ matcher: "Bash", hooks: [hook] });
+  }
+
+  // (B2) keyless Haiku veto for PowerShell — same prompt, risky patterns rescoped to PowerShell()
+  const psGated = cfg.categories?.powershell?.mode === "gate";
+  if (cfg.llm?.enabled && psGated) {
+    const veto = fs.readFileSync(PATHS.vetoPrompt, "utf8");
+    const ifScope = (cfg.riskyScope || []).map((g) => g.replace(/^Bash\(/, "PowerShell(")).join("|");
+    const hook = { type: "prompt", prompt: veto, timeout: cfg.llm.timeoutSeconds || 25 };
+    if (cfg.llm.model) hook.model = cfg.llm.model;
+    if (ifScope) hook.if = ifScope;
+    settings.hooks.PreToolUse.push({ matcher: "PowerShell", hooks: [hook] });
   }
 
   // (C) learning capture — a PostToolUse hook records approved "asks" so they stop prompting.
