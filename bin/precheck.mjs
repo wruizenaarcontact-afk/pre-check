@@ -246,6 +246,19 @@ function stripEnvPrefix(unit) {
   return unit.replace(/^(\s*)env\b(?:\s+(?:-\S+|[A-Za-z_]\w*=\S*))*\s+(?=\S)/i, "$1");
 }
 
+// Strip a leading transparent command wrapper (time/nice/nohup/command/exec/xargs/…) so the wrapped
+// interpreter is re-classified. Deliberately excludes sudo/doas (those are denied, not transparent).
+function stripWrapperPrefix(unit) {
+  return unit.replace(/^(\s*)(time|nice|nohup|ionice|stdbuf|setsid|command|exec|xargs|nocache|chrt|taskset)\b(?:\s+-\S+|\s+\d+)*\s+(?=\S)/i, "$1");
+}
+
+// Loop env + wrapper stripping until stable (handles `time env X=1 node -e`, `nice node -e`, …).
+function stripPrefixes(unit) {
+  let s = unit, prev;
+  do { prev = s; s = stripWrapperPrefix(stripEnvPrefix(s)); } while (s !== prev);
+  return s;
+}
+
 // Shell-ish tokenizer that strips surrounding quotes from each token (quote-aware). Used to inspect
 // an interpreter's OWN flag region robustly (so `node '-e'` == `node -e`, and app flags after the
 // script are never mistaken for interpreter flags).
@@ -267,30 +280,35 @@ function tokenizeArgs(s) {
 // or reads stdin (route to a deterministic ASK, robust vs quoting), else null (fall through to the
 // normal allow rules — a plain file run stays a silent allow).
 function classifyInterpreter(unit) {
-  const m = /^\s*(deno\s+run|deno\s+eval|ts-node|tsx|nodemon|bunx|node|bun)\b(.*)$/i.exec(unit);
+  const m = /^\s*(deno|ts-node|tsx|nodemon|bunx|node|bun)\b(.*)$/i.exec(unit);
   if (!m) return null;
-  const head = m[1].toLowerCase().replace(/\s+/g, " ");
+  const head = m[1].toLowerCase();
   const toks = tokenizeArgs(m[2]);
-  if (head === "deno eval" || head === "bunx") return "exec";
+  if (head === "bunx") return "exec";                                          // runs an arbitrary package
   if (head === "bun") {
-    if (toks[0] === "x") return "exec";                                       // bun x <pkg>
-    if (/^(-e|--eval)$/i.test(toks[0] || "")) return "exec";                  // bun -e <code>
+    if (toks[0] === "x" || /^(-e|--eval)/i.test(toks[0] || "")) return "exec"; // bun x <pkg> / bun -e <code>
     return null;                                                             // bun run/test/... -> safe.node-pkg
   }
-  if (head === "deno run") {
-    for (const t of toks) {
-      if (t === "--") break;
-      if (t === "-" || /^(https?:\/\/|npm:|jsr:|\/dev\/(stdin|fd))/i.test(t)) return "exec"; // stdin / remote
-      if (t.startsWith("-")) continue;                                        // deno flag
-      return null;                                                           // local file
+  if (head === "deno") {
+    const sub = (toks[0] || "").toLowerCase();
+    if (sub === "eval" || sub === "repl") return "exec";
+    const remote = (t) => t === "-" || /^(https?:\/\/|npm:|jsr:|\/dev\/(stdin|fd))/i.test(t);
+    if (sub === "run") {
+      for (const t of toks.slice(1)) {
+        if (t === "--") break;
+        if (remote(t)) return "exec";                                         // remote source / stdin
+        if (t.startsWith("-")) continue;
+        return null;                                                          // local file
+      }
+      return null;
     }
-    return null;
+    if (sub === "compile" || sub === "install" || sub === "bundle") return toks.slice(1).some(remote) ? "exec" : null;
+    return null;                                                              // deno task/cache/... (project code)
   }
-  // node / ts-node / tsx / nodemon — inline-eval + module-preload flags (per-interpreter meaning)
-  const evalFlags = head === "nodemon" ? /^(-r|--require|--exec|-x)$/i
-    : head === "tsx" ? /^(--require|--import|--loader)$/i
-      : /^(-e|-p|--eval|--print|-r|--require|--import|--loader|--experimental-loader)$/i;
-  const evalAttached = (head === "node" || head === "ts-node") ? /^-[a-z]*[epr]/i : null;
+  // node / ts-node / tsx / nodemon — walk the interpreter's own flag region (before the script or `--`)
+  const evalFlags = head === "nodemon" ? /^(-r|--require|--exec|-x)$/i        // nodemon -e = extensions (benign)
+    : /^(-e|-p|--eval|--print|-r|--require|--import|--loader|--experimental-loader)$/i; // node / ts-node / tsx
+  const evalAttached = head === "nodemon" ? null : /^-[a-z]*[epr]/i;          // -e0, -pe, -r./x
   for (const t of toks) {
     if (t === "--") break;
     if (t.startsWith("-")) {
@@ -298,6 +316,7 @@ function classifyInterpreter(unit) {
           /^--(eval|print|require|import|loader|experimental-loader)=/i.test(t)) return "exec";
       continue;                                                              // other interpreter flag
     }
+    if (/^<{1,3}/.test(t)) return "exec";                                      // stdin redirect: node reads code from stdin
     if (head === "node" && /^\/dev\/(stdin|fd)/i.test(t)) return "exec";      // node /dev/stdin
     return null;                                                             // first non-flag = script -> safe
   }
@@ -315,8 +334,8 @@ function evaluateBash(command, rules, riskyRx, cfg, parse = parseUnits) {
   const bump = (decision, id, note) => { if (rank[decision] > rank[worst]) { worst = decision; info = { id, note }; } };
 
   for (const unit of units) {
-    // normalize git global-flags, de-obfuscate quotes/backslashes, and unwrap `env VAR=val` prefixes
-    const u = stripEnvPrefix(stripObfuscation(stripGitGlobalFlags(unit)));
+    // normalize git global-flags, de-obfuscate quotes/backslashes, and unwrap env/wrapper prefixes
+    const u = stripPrefixes(stripObfuscation(stripGitGlobalFlags(unit)));
     // (0) deliberately force-allowed (user extraAllow / project context / promoted rule) —
     //     wins over deny. The settings.json deny-backstop still blocks catastrophic literals.
     const t = firstMatch(rules.forceAllow, u);

